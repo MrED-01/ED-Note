@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>ED Note</title>
+<meta name="description" content="PDF okuma, alıntılama, kalemle not alma ve ses kaydı.">
+<meta name="theme-color" content="#f3f3f1" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0f0f10" media="(prefers-color-scheme: dark)">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="icons/favicon-64.png" type="image/png" sizes="64x64">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="vendor/fonts/ed/fonts.css">
+</head>
+<body data-view="home" data-tool="select" data-tab="pdf">
+
+<!-- ============ HOME ============ -->
+<div id="home" class="home">
+  <div class="home-inner">
+    <header class="home-head">
+      <svg class="logo-mark" viewBox="22 50 624 546" role="img" aria-label="ED Note logosu"><path fill="currentColor" fill-rule="evenodd" d="M166 50 L640 64 C602 78 542 116 522 156 C517 166 516 172 516 178 L352 180 L348 236 L500 238 C596 240 646 304 646 386 L646 424 C646 520 592 576 498 580 L124 584 C164 548 180 500 184 440 L188 392 C182 368 150 360 112 366 C78 372 46 384 22 397 C70 330 146 264 204 262 L206 140 C206 104 192 72 166 50 Z M352 380 L512 380 L514 346 C556 350 582 378 583 412 L584 452 C582 498 550 524 500 532 C512 512 522 496 522 480 L514 470 L352 470 Z"/></svg>
+      <h1>ED Note</h1>
+      <p class="tagline">Oku. Alıntıla. Düşün.</p>
+    </header>
+    <div class="home-actions">
+      <button class="btn primary lg" id="hOpen">PDF aç</button>
+      <button class="btn lg" id="hImport">Projeyi içe aktar</button>
+      <button class="btn lg" id="hFolder" hidden>Klasörden aç</button>
+    </div>
+    <p class="home-hint">Birden fazla PDF seçersen hepsi aynı projeye girer; alıntıları tek masada birleştirir, birbirine bağlarsın.</p>
+    <section class="recent">
+      <h2>Projeler</h2>
+      <ul id="recent" class="recent-list"></ul>
+      <p id="recentEmpty" class="quiet">Henüz bir proje yok. Bir PDF açtığında burada görünür ve bu cihazda otomatik olarak saklanır.</p>
+    </section>
+    <button class="link" id="hSample">Örnek belgeyle dene</button>
+  </div>
+</div>
+
+<!-- ============ EDITOR ============ -->
+<div id="editor" class="editor">
+  <header class="topbar">
+    <div class="tb-left">
+      <button class="icon-btn" id="bHome" title="Kitaplık" aria-label="Kitaplığa dön"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button>
+      <div class="doc-meta"><div class="doc-title" id="docTitle"></div><div class="save-state" id="saveState"></div></div>
+    </div>
+    <div class="tb-center">
+      <div class="seg" id="tools" role="toolbar" aria-label="Araçlar">
+        <button data-tool="select" title="Seç ve alıntıla (V)" aria-label="Seç"><svg viewBox="0 0 24 24"><path d="M6 3.5l12 7.2-5.2 1.7-2.6 5.6z"/></svg></button>
+        <button data-tool="pen" title="Kalem (P)" aria-label="Kalem"><svg viewBox="0 0 24 24"><path d="M16.5 3.8a2 2 0 0 1 2.9 2.9L8.2 17.9 4.5 19l1.1-3.7z"/></svg></button>
+        <button data-tool="hl" title="Fosforlu kalem (H)" aria-label="Fosforlu kalem"><svg viewBox="0 0 24 24"><path d="M9 11.5 4.5 16v3h3L12 14.5"/><path d="m9 11.5 6-6 3.5 3.5-6 6z"/><path d="M14 20.5h6"/></svg></button>
+        <button data-tool="eraser" title="Silgi (E)" aria-label="Silgi"><svg viewBox="0 0 24 24"><path d="M8 20h11"/><path d="m5 14.5 8.5-8.5a2 2 0 0 1 2.8 0l2.7 2.7a2 2 0 0 1 0 2.8L11.5 19H9.5z"/><path d="m9 10.5 5.5 5.5"/></svg></button>
+        <button data-tool="text" title="Metin kutusu (T)" aria-label="Metin"><svg viewBox="0 0 24 24"><path d="M6 6.5V5h12v1.5M12 5v14M9.5 19h5"/></svg></button>
+        <button data-tool="lasso" title="Kement: bir bölgenin etrafını çiz, görsel olarak masaya ekle (L)" aria-label="Kement"><svg viewBox="0 0 24 24"><ellipse cx="12" cy="10.5" rx="7.5" ry="5.5" stroke-dasharray="2.6 2.4"/><path d="M8 15.5c-1.5 1.6-1.2 3.6.8 4"/></svg></button>
+      </div>
+    </div>
+    <div class="tb-right">
+      <button class="icon-btn" id="bSearch" title="PDF'te ara (Ctrl+F)" aria-label="Ara"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="m20 20-4.5-4.5"/></svg></button>
+      <button class="icon-btn" id="bUndo" title="Geri al (Ctrl+Z)" aria-label="Geri al" disabled><svg viewBox="0 0 24 24"><path d="M9 14 4.5 9.5 9 5"/><path d="M4.5 9.5H14a5.5 5.5 0 0 1 0 11h-3"/></svg></button>
+      <button class="icon-btn" id="bRedo" title="İleri al (Ctrl+Y)" aria-label="İleri al" disabled><svg viewBox="0 0 24 24"><path d="m15 14 4.5-4.5L15 5"/><path d="M19.5 9.5H10a5.5 5.5 0 0 0 0 11h3"/></svg></button>
+      <button class="rec-btn" id="bRec" title="Ses kaydı" aria-label="Ses kaydı"><span class="rec-dot"></span><span class="rec-mode" id="recModeIcon"></span><span class="rec-time" id="recTime" hidden>00:00</span></button>
+      <button class="icon-btn" id="bMore" title="Diğer" aria-label="Diğer seçenekler"><svg viewBox="0 0 24 24"><circle cx="5.5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="18.5" cy="12" r="1.2"/></svg></button>
+    </div>
+  </header>
+
+  <div class="subbar">
+    <div class="opts" id="opts" hidden><span class="swatches" id="swatches"></span><span class="vsep"></span><span class="sizes" id="sizes"></span><span class="vsep"></span><button class="chip-toggle" id="bPenOnly" aria-pressed="false" title="Kalemle yaz, parmakla kaydır">Sadece kalem</button></div>
+    <div class="searchbar" id="searchbar" hidden>
+      <svg viewBox="0 0 24 24" class="sb-ico"><circle cx="11" cy="11" r="6"/><path d="m20 20-4.5-4.5"/></svg>
+      <input id="q" type="search" placeholder="PDF'te ara" aria-label="PDF'te ara" autocomplete="off">
+      <span class="cnt" id="qCount"></span>
+      <button class="icon-btn sm" id="qPrev" aria-label="Önceki"><svg viewBox="0 0 24 24"><path d="m6 15 6-6 6 6"/></svg></button>
+      <button class="icon-btn sm" id="qNext" aria-label="Sonraki"><svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></button>
+      <button class="icon-btn sm" id="qClose" aria-label="Aramayı kapat"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+    </div>
+  </div>
+
+  <div class="banner" id="banner" hidden><span class="msg" id="bannerMsg"></span><span class="banner-acts" id="bannerActs"></span><button class="icon-btn sm" id="bannerX" aria-label="Kapat"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button></div>
+
+  <div class="tabs" role="tablist">
+    <button class="tab" id="tabPdf" role="tab" aria-selected="true">Belge</button>
+    <button class="tab" id="tabWs" role="tab" aria-selected="false">Masa <span class="tab-n" id="tabCount">0</span></button>
+  </div>
+
+  <main class="main" id="main">
+    <section class="pdfarea" id="pdfArea" aria-label="Belgeler"></section>
+    <div class="split" id="split" title="Genişliği ayarla"></div>
+    <section class="pane" id="ws" aria-label="Masa">
+      <div id="plane"><svg id="links"></svg><svg id="wsInk"></svg></div>
+      <div class="spaces" id="spaces" role="tablist" aria-label="Masalar"></div>
+      <div id="wsEmpty"><p>Belgede metin seç ve <b>Alıntıla</b>'ya dokun. Görseller için <b>Kement</b> ile bir bölgenin etrafını çiz. Kartları üst üste bırakırsan gruplanır.</p><p class="ws-hint">Başka kitap ya da makaleden de alıntı yapmak için belge başlığındaki <b>+</b> ile projeye ekle. Hepsi bu masada buluşur.</p></div>
+      <div class="link-hint" id="linkHint" hidden><span>İkinci kartı ya da belgede bir çizgi, metin kutusu veya yorum seç</span><button class="btn sm" id="linkCancel">İptal</button></div>
+      <div class="hud hud-ws">
+        <button class="hud-btn" id="bNote" title="Not kartı ekle"><svg viewBox="0 0 24 24"><path d="M12 6v12M6 12h12"/></svg><span>Not</span></button>
+        <span class="hsep"></span>
+        <button class="hud-btn icon" id="bWsOut" aria-label="Uzaklaştır"><svg viewBox="0 0 24 24"><path d="M6 12h12"/></svg></button>
+        <span class="hud-val" id="zl">100%</span>
+        <button class="hud-btn icon" id="bWsIn" aria-label="Yakınlaştır"><svg viewBox="0 0 24 24"><path d="M6 12h12M12 6v12"/></svg></button>
+        <button class="hud-btn icon" id="bFit" title="Tüm kartları göster" aria-label="Tümünü göster"><svg viewBox="0 0 24 24"><path d="M5 9.5V5h4.5M19 9.5V5h-4.5M5 14.5V19h4.5M19 14.5V19h-4.5"/></svg></button>
+      </div>
+    </section>
+    <svg id="xlinks" aria-hidden="true"></svg>
+  </main>
+
+  <!-- audio player -->
+  <div class="player" id="player" hidden>
+    <button class="pl-play" id="plPlay" aria-label="Oynat"><svg viewBox="0 0 24 24" class="i-play"><path d="M8 5.5v13l10.5-6.5z"/></svg><svg viewBox="0 0 24 24" class="i-pause"><path d="M8 5.5v13M16 5.5v13"/></svg></button>
+    <div class="pl-body">
+      <div class="pl-top"><span class="pl-title" id="plTitle"></span><span class="pl-time" id="plTime">00:00 / 00:00</span></div>
+      <div class="pl-track" id="plTrack"><div class="pl-ticks" id="plTicks"></div><div class="pl-fill" id="plFill"></div><input type="range" id="plSeek" min="0" max="1" step="0.1" value="0" aria-label="Kayıtta konum"></div>
+    </div>
+    <div class="pl-modes" role="radiogroup" aria-label="Oynatma modu">
+      <button class="pl-mode" data-mode="trace" role="radio" title="Dedektif: notlar ses kaydıyla birlikte belirir"></button>
+      <button class="pl-mode" data-mode="keep" role="radio" title="Beyin: tüm notlar her zaman görünür"></button>
+    </div>
+    <button class="pl-speed" id="plSpeed" title="Oynatma hızı">1×</button>
+    <button class="icon-btn sm" id="plList" title="Bu belgedeki kayıtlar" aria-label="Kayıt listesi"><svg viewBox="0 0 24 24"><path d="M8 7h11M8 12h11M8 17h11"/><circle cx="4.5" cy="7" r=".6"/><circle cx="4.5" cy="12" r=".6"/><circle cx="4.5" cy="17" r=".6"/></svg></button>
+    <button class="icon-btn sm" id="plClose" aria-label="Oynatıcıyı kapat"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+  </div>
+</div>
+
+<!-- popovers -->
+<div class="pop" id="recPop" hidden role="dialog" aria-label="Ses kaydı">
+  <div class="pop-title">Ses kaydı</div>
+  <p class="pop-sub">Kayıt sırasında çizdiğin, yazdığın ve alıntıladığın her şey kaydın o anına işaretlenir. Sonra bir nota dokunarak o anı dinleyebilirsin.</p>
+  <div class="modecards" role="radiogroup" aria-label="Oynatma modu">
+    <button class="modecard" data-mode="trace" role="radio"><span class="mc-ico"></span><span class="mc-name">Dedektif</span><span class="mc-desc">Dinlerken notların, kayıt sırasında yazıldığı anda tek tek belirir.</span></button>
+    <button class="modecard" data-mode="keep" role="radio"><span class="mc-ico"></span><span class="mc-name">Beyin</span><span class="mc-desc">Tüm notların her zaman görünür, kayıt sadece arka planda çalar.</span></button>
+  </div>
+  <p class="pop-note">Kayıt sürerken uygulamayı açık tut, ekran kapanmasın diye ayarlayacağım.</p>
+  <button class="btn primary block" id="recStart"><span class="rec-dot"></span>Kaydı başlat</button>
+</div>
+
+<div class="pop" id="morePop" hidden role="menu">
+  <button class="menu-item" id="mAddDoc" role="menuitem">Projeye belge ekle</button>
+  <button class="menu-item" id="mOpen" role="menuitem">Yeni projede PDF aç</button>
+  <button class="menu-item" id="mRecs" role="menuitem">Ses kayıtları</button>
+  <div class="menu-sep"></div>
+  <button class="menu-item" id="mFolder" role="menuitem" hidden>Klasöre bağla</button>
+  <button class="menu-item" id="mPdf" role="menuitem">Notlu PDF olarak dışa aktar</button>
+  <button class="menu-item" id="mExport" role="menuitem">Projeyi dışa aktar (.ednote)</button>
+  <button class="menu-item" id="mMd" role="menuitem">Notları Markdown olarak dışa aktar</button>
+  <div class="menu-sep"></div>
+  <button class="menu-item" id="mHelp" role="menuitem">Kısayollar</button>
+</div>
+
+<div class="pop recs" id="recsPop" hidden role="dialog" aria-label="Ses kayıtları">
+  <div class="pop-title" id="recsTitle">Ses kayıtları</div>
+  <ul class="rec-list" id="recList"></ul>
+  <p class="quiet" id="recListEmpty">Bu belgede henüz kayıt yok. Üstteki kırmızı düğmeyle başlatabilirsin.</p>
+</div>
+
+<div class="pop outline" id="outlinePop" hidden role="dialog" aria-label="İçindekiler ve yer imleri">
+  <div class="pop-title" id="olTitle">İçindekiler</div>
+  <div class="ol-sec"><div class="ol-h">Yer imleri</div><ul class="ol-list" id="bmList"></ul><button class="btn sm" id="bmAdd">Bu sayfayı işaretle</button></div>
+  <div class="ol-sec"><div class="ol-h">Belgenin içindekiler tablosu</div><ul class="ol-list" id="olList"></ul><p class="quiet" id="olEmpty" hidden>Bu PDF'te içindekiler tablosu yok.</p></div>
+</div>
+
+<div class="pop comment" id="commentPop" hidden role="dialog" aria-label="Yorum">
+  <div class="cm-head"><span class="pop-title" id="cmTitle">Yorum</span><span class="cm-ts" id="cmTs"></span></div>
+  <blockquote class="cm-quote" id="cmQuote"></blockquote>
+  <textarea id="cmText" rows="3" placeholder="Yorumunu yaz…"></textarea>
+  <div class="row"><button class="btn sm" id="cmDel">Sil</button><span class="spacer"></span><button class="btn sm" id="cmCard">Masaya ekle</button><button class="btn sm primary" id="cmDone">Tamam</button></div>
+</div>
+
+<div class="pop results" id="searchPop" hidden role="dialog" aria-label="Arama sonuçları"><ul class="sr-list" id="srList"></ul></div>
+
+<div class="pop" id="spacePop" hidden role="menu">
+  <button class="menu-item" id="spSheet" role="menuitem">Sayfa boyutu ve deseni</button>
+  <div class="menu-sep"></div>
+  <button class="menu-item" id="spRename" role="menuitem">Yeniden adlandır</button>
+  <button class="menu-item" id="spDelete" role="menuitem">Bu masayı sil</button>
+</div>
+
+<div class="pop sheet-pop" id="sheetPop" hidden role="dialog" aria-label="Masa sayfası">
+  <div class="sh-h">Masa sayfası</div>
+  <div class="sh-l">Desen</div>
+  <div class="pat-row" id="patRow" role="radiogroup" aria-label="Desen"></div>
+  <div class="sh-l">Kağıt rengi</div>
+  <div class="st-row" id="paperRow" role="radiogroup" aria-label="Kağıt rengi"></div>
+  <div class="sh-l">Boyut</div>
+  <div class="sh-row"><select id="shPreset" aria-label="Hazır boyut"></select>
+    <span class="lmode" id="shOrient" role="radiogroup" aria-label="Yön"><button data-o="land" role="radio" title="Yatay"><svg viewBox="0 0 24 24"><rect x="3.5" y="6.5" width="17" height="11" rx="1.5"/></svg></button><button data-o="port" role="radio" title="Dikey"><svg viewBox="0 0 24 24"><rect x="6.5" y="3.5" width="11" height="17" rx="1.5"/></svg></button></span></div>
+  <div class="sh-row"><label class="sh-n">Genişlik <input id="shW" type="number" min="10" max="10000" step="1" inputmode="numeric"> cm</label><label class="sh-n">Yükseklik <input id="shH" type="number" min="10" max="10000" step="1" inputmode="numeric"> cm</label></div>
+  <p class="sh-note" id="shNote"></p>
+</div>
+
+<div id="chip" hidden>
+  <button class="chip-a" id="chipQuote"><svg viewBox="0 0 24 24"><path d="M7 7h4v4c0 3-1.5 5-4 6"/><path d="M15 7h4v4c0 3-1.5 5-4 6"/></svg>Alıntıla</button>
+  <span class="chip-sep"></span>
+  <button class="chip-a" id="chipComment"><svg viewBox="0 0 24 24"><path d="M5 5h14v10H10l-4 4v-4H5z"/></svg>Yorum</button>
+</div>
+<div id="ghost" hidden></div>
+<div id="toast" hidden role="status"><span id="toastMsg"></span></div>
+<input type="file" id="filePdf" accept="application/pdf,.pdf" multiple hidden>
+<input type="file" id="fileZip" hidden>
+
+<script src="vendor/pdf.min.js"></script>
+<script src="vendor/jszip.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
