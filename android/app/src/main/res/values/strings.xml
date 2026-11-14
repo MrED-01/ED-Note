@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">ED Note</string>
+    <string name="title_activity_main">ED Note</string>
+    <string name="package_name">io.github.mred01.ednote</string>
+    <string name="custom_url_scheme">io.github.mred01.ednote</string>
+</resources>

@@ -1,0 +1,19 @@
+{
+	"appId": "io.github.mred01.ednote",
+	"appName": "ED Note",
+	"webDir": "dist",
+	"server": {
+		"androidScheme": "https",
+		"allowNavigation": [
+			"login.microsoftonline.com",
+			"*.microsoftonline.com",
+			"*.live.com",
+			"*.microsoft.com",
+			"*.msauth.net",
+			"*.msftauth.net"
+		]
+	},
+	"android": {
+		"allowMixedContent": false
+	}
+}
