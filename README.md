@@ -153,3 +153,10 @@ Kimlik gizli bir şifre değildir, depoda durabilir. Gizli anahtar (client secre
 
 - **Sadece belge yakınlaşır:** Belge penceresinde iki parmakla (telefon, tablet) ya da Ctrl + fare tekerleği / dokunmatik yüzeyde iki parmak (bilgisayar) ile yakınlaştırınca sadece PDF sayfası büyür; parmakların altındaki yer yerinde kalır. Uygulamanın geri kalanı (araç çubuğu, menüler, düğmeler) hiç büyüyüp küçülmez. Ctrl + / Ctrl - / Ctrl 0 de belgeyi yakınlaştırır, uzaklaştırır, genişliğe sığdırır. Tekerlek tek başına sayfaları kaydırır.
 - **Parmağa uygun düğmeler:** Telefon ve tablette düğmeler en az 40 ile 44 piksel; araç çubuğu, menüler, kart düğmeleri, renk noktaları, etiketler büyüdü. Dokunmatik ekranda belgenin - / + düğmeleri gizlenir (iki parmak yeterli), masa çubuğunda da - / + yerine iki parmak kullanılır.
+
+## Sürüm 6.8.3: otomatik güncelleme
+
+- ED-Note deposuna her yüklemede Actions APK'yı üretir, `ednote-lisans` deposunun **Releases** bölümüne koyar ve `liste.json`'a en yeni sürümün bilgisini yazar (`latest`). Bunun için ED-Note'ta `LISANS_TOKEN` adlı Secret gerekir (sadece `ednote-lisans` deposuna, Contents: Read and write izinli ince ayarlı erişim anahtarı). Secret yoksa bu adım atlanır, APK yine üretilir.
+- Uygulama lisans listesine baktığında daha yeni bir sürüm görürse üstte "Yeni sürüm hazır" şeridi çıkar: **İndir** APK'yı tarayıcıda indirir (eskisinin üstüne kurulur, notlar kalır), **Sonra** bir gün sormaz.
+- Yükleme yaparken GitHub'daki "Commit changes" kutusuna yazdığın ilk satır, güncelleme notu olarak kullanıcılara gösterilir ("Add files via upload" gibi hazır metinler gösterilmez).
+- Arkadaşlara ilk kurulum için kalıcı indirme adresi: https://github.com/MrED-01/ednote-lisans/releases/latest/download/ED-Note.apk

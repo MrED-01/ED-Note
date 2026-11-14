@@ -841,3 +841,7 @@ body.rec-paused .rec-btn .rec-dot{animation:none;opacity:.45}
 /* on touch screens the document is zoomed with two fingers, so its - / + buttons make room for the document tabs */
 @media (pointer:coarse){ .vzoom .zbtn{display:none} }
 @media (pointer:coarse) and (max-width:420px){ #bRedo{display:none} }
+
+/* update offer (Android app) */
+.updbar{position:fixed;left:50%;top:calc(10px + env(safe-area-inset-top,0px));transform:translateX(-50%);z-index:150;display:flex;align-items:center;gap:8px;max-width:calc(100vw - 20px);padding:8px 8px 8px 16px;border-radius:16px;background:var(--surface);box-shadow:0 0 0 1px var(--hair),var(--sh-2);font-size:14px}
+.updbar span{flex:1;min-width:0}

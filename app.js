@@ -2,7 +2,7 @@
    adjustable stroke sizes, straight lines and the .ednote file format */
 (() => {
 "use strict";
-const APP_VERSION = "6.8.2";
+const APP_VERSION = "6.8.3";
 /* COMPATIBILITY RULE: every release must open and edit files from every earlier release.
    SCHEMA is the data version written to project.json. cleanProject() upgrades any older shape
    (v3 single-PDF files go through migrateV3 first) and never drops user content. Fixture files from
@@ -3449,7 +3449,7 @@ const LIC = (() => {
     const st = load(); if (!st || !st.h) return "none";
     const now = Date.now();
     if (force || now - (st.chk || 0) > DAY / 2){
-      try { const j = await list(); st.chk = now; if (j.codes.includes(st.h)){ st.ok = now; delete st.rev; } else st.rev = true; store(st); }
+      try { const j = await list(); st.chk = now; if (j.codes.includes(st.h)){ st.ok = now; delete st.rev; } else st.rev = true; store(st); offerUpdate(j.latest); }
       catch { /* offline: try again later */ }
     }
     if (st.rev) return "revoked";
@@ -3459,11 +3459,23 @@ const LIC = (() => {
     const n = norm(code); if (n.length < 12 || [...n].some(ch => !ALPH.includes(ch))) return "bad";
     let j; try { j = await list(); } catch { return "offline"; }
     const h = await hashOf(n); if (!j.codes.includes(h)) return "bad";
-    const now = Date.now(); store({ code:pretty(n), h, ok:now, chk:now }); return "ok";
+    const now = Date.now(); store({ code:pretty(n), h, ok:now, chk:now }); offerUpdate(j.latest); return "ok";
   }
   const info = () => { const st = load(); return st && st.code ? st.code : ""; };
   return { ON, state, activate, info, pretty, hashOf, norm };
 })();
+/* ================= app updates (Android): the same list says which build is the newest and where to get it ================= */
+const BUILD = window.ED_BUILD || null; /* written into the app when GitHub builds the APK */
+function offerUpdate(latest){
+  if (!NATIVE || !BUILD || !latest || !(+latest.build > +BUILD.run) || !/^https:\/\//.test(latest.url || "")) return;
+  let snooze = 0; try { snooze = +JSON.parse(ls.get("ednote:upd") || "{}")[latest.build] || 0; } catch {}
+  if (Date.now() < snooze) return;
+  const bar = $("#updBar");
+  $("#updMsg").textContent = `Yeni sürüm hazır: ${latest.version || ""}${latest.notes ? " · " + latest.notes : ""}`;
+  $("#updGo").onclick = () => { bar.hidden = true; toast("İndirme tarayıcıda başlıyor. Bitince dosyaya dokunup kur; notların silinmez.", null, 6000); window.location.href = latest.url; };
+  $("#updLater").onclick = () => { bar.hidden = true; try { ls.set("ednote:upd", JSON.stringify({ [latest.build]:Date.now() + 864e5 })); } catch {} };
+  bar.hidden = false;
+}
 let licShown = false;
 function showLicGate(kind){
   const g = $("#licGate"); licShown = true; document.body.classList.add("lic-locked");
