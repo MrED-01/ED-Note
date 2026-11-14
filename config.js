@@ -5,5 +5,5 @@
 window.ED_CONFIG = {
   onedriveClientId: "12f84819-caa4-4a71-b453-f0d35c0bdff7",
   licenseListUrl: "https://raw.githubusercontent.com/MrED-01/ednote-lisans/main/liste.json",
-  licenseApiUrl: ""
+  licenseApiUrl: "https://ednote-lisans.ekrdfr01.workers.dev"
 };
