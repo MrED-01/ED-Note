@@ -1,5 +1,3 @@
-# Builds the ED Note Android app (APK) on GitHub's computers every time files are uploaded.
-# The APK appears under Actions > the latest run > Artifacts > ED-Note-APK.
 name: Android APK
 
 on:
@@ -37,9 +35,18 @@ jobs:
           npx cap sync android
 
       - name: Signing key
-        run: echo "$KEYSTORE_B64" | base64 -d > android/app/ednote.keystore
+        run: |
+          CLEAN=$(printf '%s' "$KEYSTORE_B64" | tr -d ' \r\n\t')
+          echo "Secret uzunluğu: ${#CLEAN} (3468 olmalı), başı: ${CLEAN:0:12} (MIIKJAIBAzCC olmalı)"
+          printf '%s' "$CLEAN" | base64 -d > android/app/ednote.keystore
+          if ! keytool -list -keystore android/app/ednote.keystore -storepass "$PW" > /dev/null 2>&1; then
+            echo "::error::İmza anahtarı açılamadı. ANDROID_KEYSTORE_BASE64 ya da ANDROID_KEYSTORE_PASSWORD yanlış."
+            exit 1
+          fi
+          echo "İmza anahtarı doğru."
         env:
           KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          PW: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
 
       - name: Build APK
         working-directory: android
@@ -58,7 +65,6 @@ jobs:
           path: ED-Note-*.apk
           retention-days: 30
 
-      # Puts the APK on the public ednote-lisans page and tells the installed apps that a new version is out.
       - name: Publish update
         if: env.HAS_LISANS_TOKEN == 'true'
         env:
