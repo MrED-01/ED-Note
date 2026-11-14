@@ -252,7 +252,8 @@ if (!/^https?:$/.test(location.protocol)) document.addEventListener("DOMContentL
 <div class="cam" id="cam" hidden role="dialog" aria-label="Kamera">
   <div class="cam-box">
     <div class="cam-view"><video id="camVideo" playsinline autoplay muted></video><p class="cam-err" id="camErr" hidden></p></div>
-    <div class="cam-acts"><button class="btn" id="camFile">Dosyadan seç (foto ya da video)</button><button class="cam-shot" id="camShot" aria-label="Fotoğraf çek" title="Fotoğraf çek (Boşluk)"></button><button class="btn" id="camClose">Kapat</button></div>
+    <div class="cam-top"><div class="seg3 cam-modes" id="camModes"><button data-m="photo">Fotoğraf</button><button data-m="video">Video</button></div><span class="cam-time" id="camTime" hidden>00:00</span></div>
+    <div class="cam-acts"><button class="btn" id="camFile">Dosyadan seç</button><button class="cam-shot" id="camShot" aria-label="Fotoğraf çek" title="Fotoğraf çek (Boşluk)"></button><button class="btn" id="camClose">Kapat</button></div>
   </div>
 </div>
 <div class="vplay" id="vplay" hidden role="dialog" aria-label="Video">

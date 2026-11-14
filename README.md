@@ -131,3 +131,8 @@ Kimlik gizli bir şifre değildir, depoda durabilir. Gizli anahtar (client secre
 - **Telefonda kamera menüsü:** Kamera düğmesine dokununca üç seçenek çıkar: Fotoğraf çek, Video çek, Galeriden ya da dosyadan seç.
 - **Video çekerken ses kaydı duraklar:** Ses kaydı sürerken "Video çek" seçilirse kayıt otomatik duraklar, video bitince devam eder; saat de durur, notlar kayıtla uyumlu kalır. Video, çekime başlandığı ana bağlanır.
 - **Mikrofon elden giderse:** Bazı telefonlarda (özellikle iPhone, iPad) kamera mikrofonu tamamen alır. O zaman kaydın o ana kadarki kısmı saklanır ve kayıt "(devam)" adıyla yeni bir parça olarak kendiliğinden sürer. Hiçbir ses kaybolmaz.
+
+## Sürüm 6.7.2
+
+- **Bilgisayarda video:** Kamera penceresinde üstte **Fotoğraf / Video** seçimi var. Video seçiliyken yuvarlak düğme kırmızı olur: bir basış başlatır, bir basış durdurur (Boşluk tuşu da aynı). Süre ve boyut kayıt sırasında görünür. Ses kaydı sürüyorsa video boyunca duraklar, sonra devam eder. Pencereyi kapatmak kaydı durdurur ve videoyu saklar.
+- **Tek basış, tek fotoğraf:** Boşluk tuşuna art arda ya da basılı tutarak basınca artık sadece bir fotoğraf çekilir.

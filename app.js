@@ -2,7 +2,7 @@
    adjustable stroke sizes, straight lines and the .ednote file format */
 (() => {
 "use strict";
-const APP_VERSION = "6.7.1";
+const APP_VERSION = "6.7.2";
 /* COMPATIBILITY RULE: every release must open and edit files from every earlier release.
    SCHEMA is the data version written to project.json. cleanProject() upgrades any older shape
    (v3 single-PDF files go through migrateV3 first) and never drops user content. Fixture files from
@@ -2891,11 +2891,13 @@ function addPhoto({ src, w:iw, h:ih }){
   toast(it.rec ? "Fotoğraf kaydın bu anına bağlandı" : "Fotoğraf masaya eklendi");
 }
 /* on a laptop the file picker cannot take a photo, so the camera opens here; phones use their own camera screen */
-const CAM = { stream:null };
+/* laptop camera: photo or video. One press = one photo; in video mode the same button starts and stops recording */
+const CAM = { stream:null, mode:"photo", busy:false, rec:null, chunks:[], t0:0, tick:0, st:null, paused:false };
 async function openCamera(){
   const phone = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
   if (phone || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){ $("#filePhoto").click(); return; }
-  $("#cam").hidden = false; $("#camErr").hidden = true; $("#camShot").disabled = true; $("#camVideo").hidden = false;
+  $("#cam").hidden = false; $("#camErr").hidden = true; $("#camShot").disabled = true; $("#camVideo").hidden = false; CAM.busy = false;
+  setCamMode(CAM.mode);
   try {
     CAM.stream = await navigator.mediaDevices.getUserMedia({ video:{ facingMode:{ ideal:"environment" }, width:{ ideal:1920 }, height:{ ideal:1080 } }, audio:false });
     if ($("#cam").hidden){ closeCamera(); return; }
@@ -2906,20 +2908,74 @@ async function openCamera(){
     $("#camErr").hidden = false;
   }
 }
-function closeCamera(){ if (CAM.stream){ CAM.stream.getTracks().forEach(t => t.stop()); CAM.stream = null; } $("#camVideo").srcObject = null; $("#cam").hidden = true; }
-$("#camShot").onclick = () => {
+function setCamMode(m){
+  if (CAM.rec) return;
+  CAM.mode = m; $("#cam").dataset.mode = m;
+  $("#camModes").querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.m === m)));
+  const t = m === "video" ? "Videoyu başlat (Boşluk)" : "Fotoğraf çek (Boşluk)"; $("#camShot").title = t; $("#camShot").setAttribute("aria-label", t);
+  $("#camTime").hidden = true;
+}
+$("#camModes").querySelectorAll("button").forEach(b => b.onclick = () => setCamMode(b.dataset.m));
+async function startCamVideo(){
+  if (CAM.rec || !CAM.stream || !window.MediaRecorder) return;
+  CAM.busy = true;
+  let mic = null;
+  try { mic = await navigator.mediaDevices.getUserMedia({ audio:{ echoCancellation:true, noiseSuppression:true } }); } catch { toast("Mikrofona erişilemedi, video sessiz kaydedilecek."); }
+  const tracks = [...CAM.stream.getVideoTracks(), ...(mic ? mic.getAudioTracks() : [])], ms = new MediaStream(tracks);
+  const mime = ["video/webm;codecs=vp9,opus", "video/webm;codecs=vp8,opus", "video/webm", "video/mp4"].find(m => MediaRecorder.isTypeSupported(m)) || "";
+  let mr; try { mr = new MediaRecorder(ms, mime ? { mimeType:mime, videoBitsPerSecond:5e6 } : {}); } catch { mr = new MediaRecorder(ms); }
+  CAM.st = Rec.active ? { rec:Rec.active.id, t:r2(recElapsed()) } : null;
+  CAM.paused = pauseRec(); if (CAM.paused) toast("Ses kaydı video çekilirken duraklatıldı");
+  CAM.rec = mr; CAM.mic = mic; CAM.chunks = []; CAM.t0 = performance.now();
+  mr.ondataavailable = e => { if (e.data && e.data.size) CAM.chunks.push(e.data); };
+  mr.start(1000);
+  $("#cam").classList.add("recording"); $("#camTime").hidden = false; $("#camTime").textContent = "00:00";
+  CAM.tick = setInterval(() => { $("#camTime").textContent = fmtT((performance.now() - CAM.t0) / 1000) + " · " + fmtMB(CAM.chunks.reduce((a, c) => a + c.size, 0)); }, 500);
+  const t = "Videoyu durdur (Boşluk)"; $("#camShot").title = t; $("#camShot").setAttribute("aria-label", t);
+  setTimeout(() => CAM.busy = false, 800);
+}
+async function stopCamVideo(){
+  const mr = CAM.rec; if (!mr) return; CAM.busy = true;
+  await new Promise(res => { if (mr.state === "inactive"){ res(); return; } mr.onstop = res; setTimeout(res, 4000); try { mr.stop(); } catch { res(); } });
+  clearInterval(CAM.tick); if (CAM.mic) CAM.mic.getTracks().forEach(t => t.stop());
+  const type = (mr.mimeType || "video/webm").split(";")[0], blob = new Blob(CAM.chunks, { type });
+  const file = new File([blob], `ED Note video ${new Date().toISOString().slice(0, 16).replace(/[:T]/g, "-")}${videoExt(type)}`, { type });
+  const st = CAM.st, paused = CAM.paused, dur = (performance.now() - CAM.t0) / 1000;
+  CAM.rec = null; CAM.mic = null; CAM.chunks = []; CAM.st = null; CAM.paused = false; $("#cam").classList.remove("recording");
+  closeCamera();
+  if (paused) resumeRec();
+  if (blob.size && S.proj) await addVideo(file, st, { dur });
+}
+function closeCamera(){
+  if (CAM.rec){ stopCamVideo(); return; } /* closing while recording keeps the video */
+  if (CAM.stream){ CAM.stream.getTracks().forEach(t => t.stop()); CAM.stream = null; }
+  $("#camVideo").srcObject = null; $("#cam").hidden = true; $("#cam").classList.remove("recording"); CAM.busy = false;
+}
+function takeCamPhoto(){
   const v = $("#camVideo"), w = v.videoWidth, h = v.videoHeight; if (!w || !S.proj) return;
+  CAM.busy = true; $("#camShot").disabled = true;
   const k = Math.min(1, 1600 / Math.max(w, h)), c = document.createElement("canvas"); c.width = Math.round(w * k); c.height = Math.round(h * k);
   c.getContext("2d").drawImage(v, 0, 0, c.width, c.height);
   $("#cam").classList.add("flash"); setTimeout(() => $("#cam").classList.remove("flash"), 180);
   addPhoto({ src:c.toDataURL("image/jpeg", 0.85), w:c.width, h:c.height }); setTimeout(closeCamera, 200);
-};
-$("#camFile").onclick = () => { closeCamera(); $("#filePhoto").click(); };
-$("#camClose").onclick = closeCamera;
+}
+/* one action per press: repeats and the button's own Space activation are ignored */
+function camAction(){
+  if (CAM.busy || $("#camShot").disabled) return;
+  if (CAM.mode === "photo") takeCamPhoto(); else if (CAM.rec) stopCamVideo(); else startCamVideo();
+}
+$("#camShot").onclick = e => { e.preventDefault(); camAction(); };
+$("#camFile").onclick = () => { if (CAM.rec) return; closeCamera(); $("#filePhoto").click(); };
+$("#camClose").onclick = () => closeCamera();
 document.addEventListener("keydown", e => {
   if ($("#cam").hidden) return; e.stopImmediatePropagation();
-  if (e.key === "Escape"){ e.preventDefault(); closeCamera(); } else if ((e.key === " " || e.key === "Enter") && !$("#camShot").disabled && document.activeElement !== $("#camFile") && document.activeElement !== $("#camClose")){ e.preventDefault(); $("#camShot").click(); }
+  if (e.key === "Escape"){ e.preventDefault(); closeCamera(); return; }
+  if (e.key === " " || e.key === "Enter"){
+    const a = document.activeElement; if (a && a !== $("#camShot") && a.tagName === "BUTTON" && e.key === "Enter") return;
+    e.preventDefault(); if (e.repeat) return; camAction();
+  }
 }, true);
+document.addEventListener("keyup", e => { if (!$("#cam").hidden && (e.key === " " || e.key === "Enter")) e.preventDefault(); }, true);
 const isPhoneLike = () => /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
 $("#bPhoto").onclick = () => { if (isNarrow()) setTab("ws"); if (isPhoneLike()) openPop($("#shotPop"), $("#bPhoto")); else openCamera(); };
 $("#shotPhoto").onclick = () => { closePop(); $("#fileShot").click(); };
@@ -2974,12 +3030,13 @@ function videoCard(meta, file, vid, local, st){
   if (S.lastBg && S.lastBg !== "white") it.bg = S.lastBg; if (S.lastFrame && S.lastFrame !== "thin") it.frame = S.lastFrame; if (S.lastFont) it.font = S.lastFont;
   S.proj.items.push(it); S.sel = it.id; renderWs(); commit(); showCardIfHidden(it.id); return it;
 }
-async function addVideo(f, st){
+async function addVideo(f, st, hint){
   if (!S.proj) return;
   const name = f.name && f.name !== "blob" ? f.name : `ED Note video ${new Date().toISOString().slice(0, 16).replace(/[:T]/g, "-")}${videoExt(f.type)}`;
   const file = f.name === name ? f : new File([f], name, { type:f.type || "video/mp4" });
   toast("Video hazırlanıyor…");
   let meta; try { meta = await videoMeta(file); } catch { meta = { dur:0, vw:0, vh:0, poster:"" }; }
+  if (!meta.dur && hint && hint.dur) meta.dur = hint.dur; /* videos recorded in the browser carry no length in the file */
   const need = file.size + 30e6, free = await freeSpace(), vid = "v" + uid();
   let stored = false;
   if (free > need){ try { await DB.put("blobs", { id:vid, blob:file, mime:file.type }); stored = true; } catch (e){ console.warn("video store", e); } }
