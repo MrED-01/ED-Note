@@ -116,7 +116,7 @@ if (!/^https?:$/.test(location.protocol)) document.addEventListener("DOMContentL
       <div class="link-hint" id="linkHint" hidden><span>İkinci kartı, belgede bir çizgi, metin kutusu ya da yorumu seç; masada boş bir yere dokunursan bağlantı orada biter</span><button class="btn sm" id="linkCancel">İptal</button></div>
       <div class="hud hud-ws">
         <button class="hud-btn" id="bNote" title="Not kartı ekle"><svg viewBox="0 0 24 24"><path d="M12 6v12M6 12h12"/></svg><span>Not</span></button>
-        <button class="hud-btn icon" id="bPhoto" title="Fotoğraf ekle (kayıt sırasında kaydın o anına bağlanır)" aria-label="Fotoğraf ekle"><svg viewBox="0 0 24 24"><path d="M4 8.5a2 2 0 0 1 2-2h2l1.5-2h5l1.5 2h2a2 2 0 0 1 2 2V18a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><circle cx="12" cy="13" r="3.6"/></svg></button>
+        <button class="hud-btn icon" id="bPhoto" title="Fotoğraf ya da video ekle (kayıt sırasında kaydın o anına bağlanır)" aria-label="Fotoğraf ya da video ekle"><svg viewBox="0 0 24 24"><path d="M4 8.5a2 2 0 0 1 2-2h2l1.5-2h5l1.5 2h2a2 2 0 0 1 2 2V18a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><circle cx="12" cy="13" r="3.6"/></svg></button>
         <button class="hud-btn icon" id="bWsFind" title="Masada ara ve etiketle süz" aria-label="Masada ara"><svg viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6"/><path d="M15 15l5 5"/></svg></button>
         <span class="hsep"></span>
         <button class="hud-btn icon" id="bWsOut" aria-label="Uzaklaştır"><svg viewBox="0 0 24 24"><path d="M6 12h12"/></svg></button>
@@ -252,10 +252,21 @@ if (!/^https?:$/.test(location.protocol)) document.addEventListener("DOMContentL
 <div class="cam" id="cam" hidden role="dialog" aria-label="Kamera">
   <div class="cam-box">
     <div class="cam-view"><video id="camVideo" playsinline autoplay muted></video><p class="cam-err" id="camErr" hidden></p></div>
-    <div class="cam-acts"><button class="btn" id="camFile">Dosyadan seç</button><button class="cam-shot" id="camShot" aria-label="Fotoğraf çek" title="Fotoğraf çek (Boşluk)"></button><button class="btn" id="camClose">Kapat</button></div>
+    <div class="cam-acts"><button class="btn" id="camFile">Dosyadan seç (foto ya da video)</button><button class="cam-shot" id="camShot" aria-label="Fotoğraf çek" title="Fotoğraf çek (Boşluk)"></button><button class="btn" id="camClose">Kapat</button></div>
   </div>
 </div>
-<input type="file" id="filePhoto" accept="image/*" multiple hidden>
+<div class="vplay" id="vplay" hidden role="dialog" aria-label="Video">
+  <div class="vp-box"><video id="vpVideo" controls playsinline></video>
+    <div class="vp-acts"><span class="vp-name" id="vpName"></span><button class="btn sm" id="vpKeep" hidden>Projeye al</button><button class="btn sm" id="vpSave">Cihaza kaydet</button><button class="btn sm primary" id="vpClose">Kapat</button></div></div>
+</div>
+<div class="pop" id="shotPop" hidden role="menu">
+  <button class="menu-item" id="shotPhoto" role="menuitem">Fotoğraf çek</button>
+  <button class="menu-item" id="shotVideo" role="menuitem">Video çek</button>
+  <button class="menu-item" id="shotFiles" role="menuitem">Galeriden ya da dosyadan seç</button>
+</div>
+<input type="file" id="fileShot" accept="image/*" capture="environment" hidden>
+<input type="file" id="fileClip" accept="video/*" capture="environment" hidden>
+<input type="file" id="filePhoto" accept="image/*,video/*" multiple hidden>
 <input type="file" id="filePdf" accept="application/pdf,.pdf" multiple hidden>
 <input type="file" id="fileZip" hidden>
 

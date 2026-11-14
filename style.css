@@ -17,7 +17,7 @@
   --r:12px; --r-sm:8px;
   color-scheme:light;
 }
-@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]):not([data-theme="sepia"]){
   --bg:#0f0f10; --surface:#1c1c1e; --surface-2:#232325; --ink:#f5f5f7; --ink-2:#a1a1a6; --ink-3:#6e6e73;
   --hair:rgba(255,255,255,.08); --hair-2:rgba(255,255,255,.16);
   --accent:#7dc3ae; --accent-ink:#0c1a16; --accent-soft:rgba(125,195,174,.15);
@@ -498,7 +498,7 @@ svg.ink .ips.ik-k{fill:none;stroke:var(--pk-k)} svg.ink .ips.ik-u{fill:none;stro
 
 /* ================= v6: workspace sheet and notebook patterns ================= */
 :root{ --ws-out:#e6e6e2; --paper:#fdfdfb; --pat-dot:rgba(0,0,0,.16); --pat-line:rgba(0,0,0,.075); --pat-rule:rgba(43,92,160,.20); --pat-margin:rgba(205,70,60,.38); --pat-mm1:rgba(47,107,94,.09); --pat-mm2:rgba(47,107,94,.24); }
-@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){ --ws-out:#09090a; --paper:#1a1a1c; --pat-dot:rgba(255,255,255,.16); --pat-line:rgba(255,255,255,.07); --pat-rule:rgba(140,180,240,.18); --pat-margin:rgba(255,120,110,.32); --pat-mm1:rgba(125,195,174,.08); --pat-mm2:rgba(125,195,174,.2); }}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]):not([data-theme="sepia"]){ --ws-out:#09090a; --paper:#1a1a1c; --pat-dot:rgba(255,255,255,.16); --pat-line:rgba(255,255,255,.07); --pat-rule:rgba(140,180,240,.18); --pat-margin:rgba(255,120,110,.32); --pat-mm1:rgba(125,195,174,.08); --pat-mm2:rgba(125,195,174,.2); }}
 :root[data-theme="dark"]{ --ws-out:#09090a; --paper:#1a1a1c; --pat-dot:rgba(255,255,255,.16); --pat-line:rgba(255,255,255,.07); --pat-rule:rgba(140,180,240,.18); --pat-margin:rgba(255,120,110,.32); --pat-mm1:rgba(125,195,174,.08); --pat-mm2:rgba(125,195,174,.2); }
 #ws{background-color:var(--ws-out);background-image:none}
 #sheet{position:absolute;pointer-events:none;background-color:var(--paper);border-radius:3px;box-shadow:0 0 0 1px var(--hair),0 10px 40px rgba(0,0,0,.09)}
@@ -551,7 +551,7 @@ svg.ink .ips.ik-k{fill:none;stroke:var(--pk-k)} svg.ink .ips.ik-u{fill:none;stro
 /* the sheet edge stays quiet; the sheet grows by itself */
 #sheet{box-shadow:0 0 0 1px var(--hair)}
 :root{ --ws-out:#ececE8; }
-@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){ --ws-out:#121214; }}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]):not([data-theme="sepia"]){ --ws-out:#121214; }}
 :root[data-theme="dark"]{ --ws-out:#121214; }
 
 /* ================= v6.2: card look, paper colours, fonts ================= */
@@ -567,10 +567,10 @@ svg.ink .ips.ik-k{fill:none;stroke:var(--pk-k)} svg.ink .ips.ik-u{fill:none;stro
 .card-head .pg i,.card-head .kind i{display:none}
 .card .quote,.card .note{font-family:var(--cf,var(--f))}
 .card.tinted .note:hover,.card.tinted .note:focus{background:rgba(0,0,0,.05)}
-@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .card{background:var(--cbg-d,var(--surface))}}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]):not([data-theme="sepia"]) .card{background:var(--cbg-d,var(--surface))}}
 :root[data-theme="dark"] .card{background:var(--cbg-d,var(--surface))}
 #sheet.tinted{background-color:var(--pl)}
-@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) #sheet.tinted{background-color:var(--pd)}}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]):not([data-theme="sepia"]) #sheet.tinted{background-color:var(--pd)}}
 :root[data-theme="dark"] #sheet.tinted{background-color:var(--pd)}
 .fsb.cst{display:grid;place-items:center;padding:0;width:28px}
 .fsb.cst svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.6}
@@ -580,7 +580,7 @@ svg.ink .ips.ik-k{fill:none;stroke:var(--pk-k)} svg.ink .ips.ik-u{fill:none;stro
 .st-row .dot{width:22px;height:22px}
 .st-row .dot.on{box-shadow:0 0 0 2px var(--surface),0 0 0 4px var(--ink-3)}
 .paper-sw{width:28px;height:28px;border-radius:7px;border:0;padding:0;cursor:pointer;background:var(--pl);box-shadow:inset 0 0 0 1px rgba(0,0,0,.14)}
-@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .paper-sw{background:var(--pd);box-shadow:inset 0 0 0 1px rgba(255,255,255,.16)}}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]):not([data-theme="sepia"]) .paper-sw{background:var(--pd);box-shadow:inset 0 0 0 1px rgba(255,255,255,.16)}}
 :root[data-theme="dark"] .paper-sw{background:var(--pd);box-shadow:inset 0 0 0 1px rgba(255,255,255,.16)}
 .paper-sw[aria-pressed="true"]{box-shadow:inset 0 0 0 1px rgba(0,0,0,.14),0 0 0 2px var(--surface),0 0 0 4px var(--accent)}
 .seg3{display:inline-flex;padding:2px;border-radius:9px;background:var(--hair);gap:2px}
@@ -692,12 +692,10 @@ svg.ink .ips.ik-k{fill:none;stroke:var(--pk-k)} svg.ink .ips.ik-u{fill:none;stro
 @media (pointer:coarse){ .ex-acts kbd{display:none} }
 body.examining{overflow:hidden}
 
-/* reading modes: only the PDF pages change */
-body.rm-night .page{filter:invert(.9) hue-rotate(180deg)}
-body.rm-night .vpane{background:#151517}
-body.rm-sepia .page{background:#f4e9d2}
+/* reading modes colour the whole app; PDF pages keep their content (no inverting, so dark pictures stay visible) */
+body.rm-night .page canvas{filter:brightness(.86) contrast(.97)}
+body.rm-sepia .page{background:#f6ecd6}
 body.rm-sepia .page canvas{mix-blend-mode:multiply}
-body.rm-sepia .vpane{background:#e9dfca}
 @media (max-width:600px){
   .wf-row{flex-wrap:wrap;row-gap:4px}
   #wsQ{flex:1 1 calc(100% - 34px)}
@@ -745,3 +743,30 @@ body.rm-sepia .vpane{background:#e9dfca}
 #ws.linktarget{box-shadow:inset 0 0 0 2px var(--accent)}
 .lk-pt.pinend{background:var(--lc,var(--accent))}
 .app-ver{margin:6px 0 0;font:500 11.5px var(--f-m);color:var(--ink-3);text-align:center}
+
+/* sepia theme: warm paper colours for the whole app */
+:root[data-theme="sepia"]{
+  --bg:#ede2c9; --surface:#fbf4e3; --surface-2:#f4ead3; --ink:#3a2e20; --ink-2:#6f5d45; --ink-3:#a08b6c;
+  --hair:rgba(90,60,20,.10); --hair-2:rgba(90,60,20,.19);
+  --accent:#6b4f2a; --accent-ink:#fff8ea; --accent-soft:rgba(107,79,42,.12);
+  --glass:rgba(251,244,227,.82); --glass-line:rgba(90,60,20,.08);
+  --pdf-bg:#e2d4b5; --grid:rgba(90,60,20,.08); --sel:rgba(107,79,42,.25);
+  --ws-out:#e4d8bc; --paper:#f8efda;
+  color-scheme:light}
+
+/* ================= v6.7: video cards ================= */
+.vshot{position:relative;display:block;width:calc(100% - 28px);margin:2px 14px 8px;padding:0;border:0;border-radius:8px;overflow:hidden;background:#111;cursor:pointer;aspect-ratio:16/9}
+.vshot img{display:block;width:100%;height:100%;object-fit:cover}
+.vshot.local img{filter:grayscale(.6) brightness(.75)}
+.vplay-ic{position:absolute;left:50%;top:50%;width:48px;height:48px;margin:-24px 0 0 -24px;border-radius:50%;background:rgba(0,0,0,.55);display:grid;place-items:center}
+.vplay-ic svg{width:22px;height:22px;fill:#fff;stroke:none;margin-left:3px}
+.vmeta{position:absolute;left:8px;bottom:6px;padding:2px 7px;border-radius:6px;background:rgba(0,0,0,.6);color:#fff;font:500 11px var(--f)}
+.vplay{position:fixed;inset:0;z-index:95;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(0,0,0,.8)}
+.vp-box{width:min(960px,100%);display:flex;flex-direction:column;gap:12px}
+.vp-box video{width:100%;max-height:78vh;border-radius:12px;background:#000}
+.vp-acts{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.vp-name{flex:1;min-width:0;color:#fff;font-size:13px;opacity:.85;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.vp-acts .btn:not(.primary){background:rgba(255,255,255,.14);color:#fff;border-color:rgba(255,255,255,.25)}
+
+#shotPop{width:min(260px,calc(100vw - 24px))}
+body.rec-paused .rec-btn .rec-dot{animation:none;opacity:.45}

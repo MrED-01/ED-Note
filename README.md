@@ -111,3 +111,23 @@ Kimlik gizli bir şifre değildir, depoda durabilir. Gizli anahtar (client secre
 
 - **Laptopta kamera:** Kamera düğmesi bilgisayarda doğrudan kamerayı açar; deklanşöre (ya da Boşluk tuşuna) basınca fotoğraf masaya gelir. "Dosyadan seç" ile kayıtlı bir fotoğraf da eklenebilir. Telefonda telefonun kendi kamera ekranı açılır.
 - **Kitaptan masadaki herhangi bir noktaya ok:** Kalemle kitap sayfasından masada boş bir yere (örneğin kendi el yazının yanına) çizgi çek; ok o noktada biter. Tersi de olur: masada boş bir yerden kitap sayfasına çizgi çek. Uçtaki işarete dokununca karşı uca gidilir; masadaki nokta seçiliyken sürüklenerek taşınır. Renk, uç ve kesikli ayarları diğer oklardaki gibi. Notlu PDF'te iki uçta aynı numara olur.
+
+## Sürüm 6.6.1 ve 6.6.2
+
+- Ana ekranın altında sürüm numarası görünür.
+- Uygulama her açılışta dosyaların yenisini sorar; GitHub'a yüklenen yeni sürüm hemen gelir.
+- Kamera penceresi dokunmatik ekranlı laptoplarda da açılır. Fosforlu kalemle de kitaptan masaya ok çekilebilir.
+- **Okuma modları artık tüm uygulamayı boyar:** Gece seçilince arka plan, menüler, masa ve kartlar koyu olur; PDF sayfası ters çevrilmez, sadece biraz kısılır (siyah resimler görünür kalır). Sepya tüm uygulamayı sıcak kağıt rengine boyar. Normal, cihazın açık ya da koyu ayarını takip eder.
+
+## Sürüm 6.7
+
+- **Video:** Kamera düğmesinden fotoğrafın yanında video da eklenir (telefonda kamera video çekebilir, bilgisayarda "Dosyadan seç"). Çözünürlük sınırı yok, 4K da olur. Video projeden ayrı saklanır; karta dokununca oynar. Ses kaydı sürerken eklenirse kaydın o anına bağlanır.
+- **Yer kalmazsa:** Video eklenmeden önce tarayıcıdaki boş alan ölçülür. Yetmezse "Videoyu cihazına kaydedip masaya kartını ekleyeyim mi?" diye sorulur. Evet denirse video telefona ya da bilgisayara kaydedilir (iPhone ve iPad'de paylaş menüsünden "Videoyu Kaydet"), masaya kapak resmi olan bir kart gelir. Karta dokununca dosyayı seçip izlersin; sonradan yer açılırsa "Projeye al" ile projeye alınır. Notlar ve proje kaydı bundan hiç etkilenmez.
+- Videolar .ednote dosyasına ve OneDrive'a da gider (OneDrive'da `media` klasörü). Bir cihazda yer yetmiyorsa video orada indirilmez, kart durur.
+- Notlu PDF'te video kartı kapak resmiyle görünür.
+
+## Sürüm 6.7.1
+
+- **Telefonda kamera menüsü:** Kamera düğmesine dokununca üç seçenek çıkar: Fotoğraf çek, Video çek, Galeriden ya da dosyadan seç.
+- **Video çekerken ses kaydı duraklar:** Ses kaydı sürerken "Video çek" seçilirse kayıt otomatik duraklar, video bitince devam eder; saat de durur, notlar kayıtla uyumlu kalır. Video, çekime başlandığı ana bağlanır.
+- **Mikrofon elden giderse:** Bazı telefonlarda (özellikle iPhone, iPad) kamera mikrofonu tamamen alır. O zaman kaydın o ana kadarki kısmı saklanır ve kayıt "(devam)" adıyla yeni bir parça olarak kendiliğinden sürer. Hiçbir ses kaybolmaz.

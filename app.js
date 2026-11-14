@@ -2,7 +2,7 @@
    adjustable stroke sizes, straight lines and the .ednote file format */
 (() => {
 "use strict";
-const APP_VERSION = "6.6.1";
+const APP_VERSION = "6.7.1";
 /* COMPATIBILITY RULE: every release must open and edit files from every earlier release.
    SCHEMA is the data version written to project.json. cleanProject() upgrades any older shape
    (v3 single-PDF files go through migrateV3 first) and never drops user content. Fixture files from
@@ -1330,6 +1330,7 @@ function cardEl(it, inGroup){
   if (!inGroup){ c.style.left = it.x + "px"; c.style.top = it.y + "px"; c.style.width = it.w + "px"; }
   const head = document.createElement("div"); head.className = "card-head";
   if (it.photo){ const k = document.createElement("span"); k.className = "kind"; k.innerHTML = `<i class="c-${it.color}"></i>Fotoğraf`; head.appendChild(k); }
+  else if (it.type === "video"){ const k = document.createElement("span"); k.className = "kind"; k.innerHTML = `<i class="c-${it.color}"></i>Video · ${fmtT(it.dur)}`; head.appendChild(k); }
   else if (it.type === "excerpt" || it.type === "image"){
     const pg = document.createElement("button"); pg.className = "pg"; pg.innerHTML = `<i class="c-${it.color}"></i>`;
     const pgt = document.createElement("span"); pgt.className = "pg-t"; pgt.textContent = (it.type === "image" ? "Görsel · " : "") + (S.proj.docs.length > 1 ? docName(it.doc).slice(0, 22) + " · " : "") + "s. " + it.page; pg.appendChild(pgt);
@@ -1353,6 +1354,14 @@ function cardEl(it, inGroup){
     c.appendChild(row);
   }
   if (it.type === "excerpt"){ const q = document.createElement("div"); q.className = "quote"; q.textContent = it.text; c.appendChild(q); }
+  if (it.type === "video"){
+    const vb = document.createElement("button"); vb.className = "vshot" + (it.local ? " local" : ""); vb.title = "Videoyu oynat"; vb.setAttribute("aria-label", "Videoyu oynat");
+    if (it.poster){ const im = document.createElement("img"); im.src = it.poster; im.alt = ""; im.draggable = false; im.onload = drawLinks; vb.appendChild(im); } else vb.classList.add("noposter");
+    const pl = document.createElement("span"); pl.className = "vplay-ic"; pl.innerHTML = ICON.play; vb.appendChild(pl);
+    const meta = document.createElement("span"); meta.className = "vmeta"; meta.textContent = (it.local ? "Cihazda kayıtlı · " : "") + fmtMB(it.size) + (it.vh ? " · " + Math.min(it.vw, it.vh) + "p" : ""); vb.appendChild(meta);
+    vb.addEventListener("pointerdown", e => e.stopPropagation()); vb.onclick = () => { if (Date.now() - lastDragEnd < 350) return; openVideo(it); };
+    c.appendChild(vb);
+  }
   if (it.type === "image"){ const im = document.createElement("img"); im.className = "shot"; im.alt = it.photo ? "Fotoğraf" : "Sayfa " + it.page + " görsel alıntısı"; im.draggable = false; im.src = it.src; im.onload = drawLinks; c.appendChild(im); }
   const ta = document.createElement("textarea"); ta.className = "note"; ta.rows = 1; ta.setAttribute("aria-label", "Kart notu");
   ta.placeholder = it.type === "note" ? "Düşünceni yaz… (formül için $E = mc^2$)" : "Not ekle…"; ta.value = it.note || ""; ta.dataset.note = it.id;
@@ -1883,13 +1892,32 @@ el.ws.addEventListener("wheel", e => {
 
 /* ================= audio: recording ================= */
 const Rec = { active:null, mr:null, chunks:[], t0:0, stream:null, wake:null, tick:0, flush:0 };
-const recElapsed = () => (performance.now() - Rec.t0) / 1000;
+/* while paused (for example while the phone camera records a video) the clock stands still, so notes keep matching the audio */
+const recElapsed = () => ((Rec.pausedAt || performance.now()) - Rec.t0) / 1000;
+function pauseRec(){
+  if (!Rec.active || !Rec.mr || Rec.pausedAt) return false;
+  try { if (Rec.mr.state === "recording") Rec.mr.pause(); } catch {}
+  Rec.pausedAt = performance.now(); document.body.classList.add("rec-paused"); return true;
+}
+async function resumeRec(){
+  if (!Rec.active || !Rec.pausedAt) return;
+  const tr = Rec.stream && Rec.stream.getAudioTracks()[0];
+  if (!tr || tr.readyState === "ended"){
+    /* the camera took the microphone for good (iPhone, iPad): close this part and carry on in a new recording */
+    const { mode, title } = Rec.active; Rec.t0 += performance.now() - Rec.pausedAt; Rec.pausedAt = 0; document.body.classList.remove("rec-paused");
+    await stopRecording(true); await startRecording(mode, title.replace(/ \(devam( \d+)?\)$/, "") + " (devam)");
+    return;
+  }
+  Rec.t0 += performance.now() - Rec.pausedAt; Rec.pausedAt = 0; document.body.classList.remove("rec-paused");
+  try { if (Rec.mr.state === "paused") Rec.mr.resume(); } catch {}
+  toast("Ses kaydı devam ediyor");
+}
 function stamp(o){ if (Rec.active){ o.rec = Rec.active.id; o.t = r2(recElapsed()); } return o; }
 function renderRecModeIcon(){ el.recModeIcon.innerHTML = MODE[S.recMode].icon; el.recModeIcon.title = MODE[S.recMode].name; document.querySelectorAll("#recPop .modecard").forEach(b => b.setAttribute("aria-checked", String(b.dataset.mode === S.recMode))); }
 document.querySelectorAll("#recPop .modecard").forEach(b => { b.querySelector(".mc-ico").innerHTML = MODE[b.dataset.mode].icon; b.onclick = () => { S.recMode = b.dataset.mode; ls.set("alinti:recMode", S.recMode); renderRecModeIcon(); }; });
 el.rec.onclick = () => { if (Rec.active) stopRecording(); else { renderRecModeIcon(); openPop(el.recPop, el.rec); } };
 $("#recStart").onclick = () => { closePop(); startRecording(S.recMode); };
-async function startRecording(mode){
+async function startRecording(mode, title){
   if (!navigator.mediaDevices || !window.MediaRecorder){ toast("Bu tarayıcı ses kaydını desteklemiyor."); return; }
   let stream;
   try { stream = await navigator.mediaDevices.getUserMedia({ audio:{ echoCancellation:true, noiseSuppression:true, autoGainControl:true } }); }
@@ -1897,9 +1925,9 @@ async function startRecording(mode){
   const mime = ["audio/webm;codecs=opus","audio/webm","audio/mp4","audio/ogg;codecs=opus"].find(m => MediaRecorder.isTypeSupported(m)) || "";
   let mr; try { mr = new MediaRecorder(stream, mime ? { mimeType:mime, audioBitsPerSecond:48000 } : {}); } catch { mr = new MediaRecorder(stream); }
   const v = AV(); updatePgInfo(v);
-  const rec = { id:"r" + uid(), title:"Kayıt " + (S.proj.recs.length + 1), doc:v.fp, page:v.curPage || 1, startedAt:new Date().toISOString(), dur:0, mime:(mr.mimeType || mime || "audio/webm").split(";")[0], mode };
+  const rec = { id:"r" + uid(), title:title || "Kayıt " + (S.proj.recs.length + 1), doc:v.fp, page:v.curPage || 1, startedAt:new Date().toISOString(), dur:0, mime:(mr.mimeType || mime || "audio/webm").split(";")[0], mode };
   S.proj.recs.push(rec);
-  Object.assign(Rec, { active:rec, mr, stream, chunks:[], t0:performance.now() });
+  Object.assign(Rec, { active:rec, mr, stream, chunks:[], t0:performance.now(), pausedAt:0 });
   mr.ondataavailable = e => { if (e.data && e.data.size) Rec.chunks.push(e.data); };
   mr.start(1000); Rec.tick = setInterval(updRecTime, 500); Rec.flush = setInterval(flushPartial, 30000);
   await acquireWake(); document.body.classList.add("recording"); el.recTime.hidden = false; updRecTime();
@@ -1909,9 +1937,11 @@ async function acquireWake(){ try { Rec.wake = navigator.wakeLock ? await naviga
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && Rec.active) acquireWake(); });
 function updRecTime(){ el.recTime.textContent = Rec.active ? fmtT(recElapsed()) : "00:00"; }
 async function flushPartial(){ const r = Rec.active; if (!r || S.sample) return; r.dur = r2(recElapsed()); try { await DB.put("blobs", { id:r.id, blob:new Blob(Rec.chunks, { type:r.mime }), mime:r.mime }); save(); } catch {} }
-async function stopRecording(){
+async function stopRecording(quiet){
   const rec = Rec.active; if (!rec) return;
-  await new Promise(res => { Rec.mr.onstop = res; try { Rec.mr.stop(); } catch { res(); } });
+  if (Rec.pausedAt){ Rec.t0 += performance.now() - Rec.pausedAt; Rec.pausedAt = 0; document.body.classList.remove("rec-paused"); }
+  /* a recorder whose microphone was taken away is already stopped and will not fire "stop" again */
+  await new Promise(res => { if (!Rec.mr || Rec.mr.state === "inactive"){ res(); return; } Rec.mr.onstop = res; setTimeout(res, 4000); try { Rec.mr.stop(); } catch { res(); } });
   clearInterval(Rec.tick); clearInterval(Rec.flush);
   try { Rec.stream.getTracks().forEach(t => t.stop()); } catch {}
   try { Rec.wake && Rec.wake.release(); } catch {}
@@ -1919,7 +1949,7 @@ async function stopRecording(){
   Rec.active = null; Rec.chunks = []; document.body.classList.remove("recording"); el.recTime.hidden = true;
   try { await DB.put("blobs", { id:rec.id, blob, mime:rec.mime }); } catch (e){ console.error(e); toast("Ses dosyası kaydedilemedi. Cihazında yer kalmamış olabilir."); }
   renderWs(); renderAllOverlays(); save();
-  toast(`${rec.title} kaydedildi · ${fmtT(rec.dur)}`, { label:"Dinle", fn:() => openPlayer(rec.id, 0) });
+  if (!quiet) toast(`${rec.title} kaydedildi · ${fmtT(rec.dur)}`, { label:"Dinle", fn:() => openPlayer(rec.id, 0) });
 }
 window.addEventListener("beforeunload", e => { if (Rec.active){ e.preventDefault(); e.returnValue = ""; } });
 
@@ -2027,6 +2057,7 @@ async function buildZip(projRec){
   zip.file("project.json", JSON.stringify({ ...data, app:"ednote", v:SCHEMA }, null, 1));
   for (const d of data.docs){ const p = await DB.get("pdfs", d.fp); if (p) zip.file("docs/" + d.fp + ".pdf", p.bytes); }
   for (const r of data.recs || []){ const b = await DB.get("blobs", r.id); if (b) zip.file("audio/" + r.id + audioExt(r.mime), b.blob); }
+  for (const it of data.items || []) if (it.type === "video" && !it.local){ const b = await DB.get("blobs", it.vid); if (b) zip.file("media/" + it.vid + videoExt(it.mime), b.blob); }
   return { blob: await zip.generateAsync({ type:"blob", compression:"STORE", mimeType:EDNOTE_MIME }), name: safeName(projRec.name) + ".ednote" };
 }
 async function exportZip(id){
@@ -2058,6 +2089,7 @@ async function importZip(file){
     const pj = zip.file("project.json");
     if (!pj){ toast("Bu dosya bir ED Note projesi değil."); return; }
     let proj = JSON.parse(await pj.async("string"));
+    for (const it of proj.items || []) if (it && it.type === "video" && it.vid){ const vf = zip.file("media/" + it.vid + videoExt(it.mime)); if (vf){ try { await DB.put("blobs", { id:it.vid, blob:new Blob([await vf.async("uint8array")], { type:it.mime || "video/mp4" }), mime:it.mime }); } catch (e){ it.local = true; } } }
     for (const r of proj.recs || []){ const af = zip.file("audio/" + r.id + audioExt(r.mime)) || zip.file(new RegExp("^audio/" + r.id + "\\."))[0]; if (af) await DB.put("blobs", { id:r.id, blob:new Blob([await af.async("uint8array")], { type:r.mime || "audio/webm" }), mime:r.mime }); }
     if (Array.isArray(proj.docs)){
       for (const d of proj.docs){ const f = zip.file("docs/" + d.fp + ".pdf"); if (f) await DB.put("pdfs", { fp:d.fp, name:d.name, bytes:await f.async("uint8array") }); }
@@ -2251,12 +2283,12 @@ async function buildAnnotatedPdf(proj){
     return { rows, h:y };
   }
   const imgs = new Map();
-  for (const it of proj.items) if (it.type === "image"){ try { imgs.set(it.id, await pngBytesOf(it.src)); } catch {} }
+  for (const it of proj.items) if (it.type === "image" || (it.type === "video" && it.poster)){ try { imgs.set(it.id, await pngBytesOf(it.type === "video" ? it.poster : it.src)); } catch {} }
   function cardLayout(it, w){
     const f = it.fs || 1, qs = QS * f, ql = QL * f, ns = NS * f, nl = NL * f, cf = fontFor(it.font);
     const inner = w - PAD * 2, parts = []; let h = PAD + 12;
     if (it.type === "excerpt"){ const lines = wrapText(it.text, cf, qs, inner - 8); parts.push({ k:"quote", lines, y:h + 6, s:qs, l:ql }); h += 8 + lines.length * ql; }
-    if (it.type === "image"){ const im = imgs.get(it.id); const ih = im ? inner * im.h / im.w : 60; parts.push({ k:"img", y:h + 6, h:ih }); h += 10 + ih; }
+    if (it.type === "image" || it.type === "video"){ const im = imgs.get(it.id); const ih = im ? inner * im.h / im.w : 60; parts.push({ k:"img", y:h + 6, h:ih, video:it.type === "video" }); h += 10 + ih; }
     if (hasMath(it.note) && mathPng.size){ const fl = mathFlow(it.note, cf, ns, nl, inner); parts.push({ k:"mnote", rows:fl.rows, y:h + 8, s:ns }); h += 10 + fl.h; }
     else if ((it.note || "").trim()){ const lines = wrapText(it.note, cf, ns, inner); parts.push({ k:"note", lines, y:h + 8, s:ns, l:nl }); h += 10 + lines.length * nl; }
     return { h:h + PAD, parts };
@@ -2384,9 +2416,9 @@ async function buildAnnotatedPdf(proj){
       svg(`M${x},${y + 9} Q${x},${y} ${x + 9},${y} H${x + w - 9} Q${x + w},${y} ${x + w},${y + 9} V${y + PAD + 15} H${x} Z`, { color:dotCol, opacity:0.24 });
       if (frame === "none") svg(rr(x, y, w, h, 9), { borderColor:HAIR, borderWidth:0.7 });
       else svg(rr(x, y, w, h, 9), { borderColor:dotCol, borderWidth:frame === "thick" ? 4.5 : 2.2, borderOpacity:0.8 });
-      const label = it.type === "note" ? "NOT" : it.photo ? "FOTOĞRAF" : `${it.type === "image" ? "Görsel · " : ""}${proj.docs.length > 1 ? trunc(stripPdf((proj.docs.find(dd => dd.fp === it.doc) || {}).name || ""), 30) + " · " : ""}s. ${it.page}`;
+      const label = it.type === "note" ? "NOT" : it.photo ? "FOTOĞRAF" : it.type === "video" ? "VİDEO · " + fmtT(it.dur) : `${it.type === "image" ? "Görsel · " : ""}${proj.docs.length > 1 ? trunc(stripPdf((proj.docs.find(dd => dd.fp === it.doc) || {}).name || ""), 30) + " · " : ""}s. ${it.page}`;
       page.drawText(safeTxt(label), { x:X(x + PAD), y:Y(y + PAD + 7), size:HS * k, font, color:INK2 });
-      if (it.doc && !it.photo && hasPage(it.doc, it.page)){
+      if (it.doc && !it.photo && it.type !== "video" && hasPage(it.doc, it.page)){
         const tgt = pagesOf.get(it.doc)[it.page - 1], r0 = it.rects[0], top = r0 ? boxPdf(it.doc, it.page, r0)[3] + 40 : tgt.getHeight();
         linkAnnot(page, [X(x + PAD), Y(y + PAD + 12), X(x + PAD) + font.widthOfTextAtSize(safeTxt(label), HS * k), Y(y + PAD - 2)], dest(tgt, 0, Math.min(tgt.getHeight(), top)));
       }
@@ -2517,8 +2549,9 @@ function cleanProject(p){
   const sids = new Set(q.spaces.map(s => s.id)), fps = new Set(q.docs.map(d => d.fp)), s0 = q.spaces[0].id;
   q.groups = (p.groups || []).filter(g => g && g.id).map(g => ({ id:String(g.id), space:sids.has(g.space) ? g.space : s0, x:+g.x || 0, y:+g.y || 0, w:clamp(+g.w || 280, 200, 960), title:String(g.title || ""), collapsed:!!g.collapsed }));
   const gids = new Set(q.groups.map(g => g.id));
-  q.items = (p.items || []).filter(i => i && typeof i.id === "string" && ["excerpt","note","image"].includes(i.type) && (i.type !== "image" || /^data:image\/(png|webp|jpeg);base64,/.test(i.src || "")) && (i.type === "note" || fps.has(i.doc))).map(i => ({
-    id:i.id, type:i.type, text:String(i.text || ""), note:String(i.note || ""), ...(i.type !== "note" ? { doc:i.doc, page:+i.page || 1, rects:cleanRects(i.rects) } : {}), ...(i.type === "image" ? { src:i.src } : {}),
+  q.items = (p.items || []).filter(i => i && typeof i.id === "string" && ["excerpt","note","image","video"].includes(i.type) && (i.type !== "image" || /^data:image\/(png|webp|jpeg);base64,/.test(i.src || "")) && (i.type === "note" || i.type === "video" || fps.has(i.doc))).map(i => ({
+    id:i.id, type:i.type, text:String(i.text || ""), note:String(i.note || ""), ...(i.type !== "note" && i.type !== "video" ? { doc:i.doc, page:+i.page || 1, rects:cleanRects(i.rects) } : {}), ...(i.type === "image" ? { src:i.src } : {}),
+    ...(i.type === "video" ? { vid:String(i.vid || i.id), name:String(i.name || "video.mp4"), mime:String(i.mime || "video/mp4"), size:+i.size || 0, dur:+i.dur || 0, vw:+i.vw || 0, vh:+i.vh || 0, ...(/^data:image\/jpeg;base64,/.test(i.poster || "") ? { poster:i.poster } : {}), ...(i.local ? { local:true } : {}) } : {}),
     space:sids.has(i.space) ? i.space : s0, color:HL_COLORS.includes(i.color) ? i.color : "y", x:+i.x || 0, y:+i.y || 0, w:clamp(+i.w || 240, 170, 900),
     ...(isFinite(i.fs) && +i.fs !== 1 ? { fs:clamp(+i.fs, 0.7, 3) } : {}),
     ...(PAPER_COLORS[i.bg] && i.bg !== "white" ? { bg:i.bg } : {}), ...(FRAMES[i.frame] && i.frame !== "thin" ? { frame:i.frame } : {}), ...(FONT_IDS.has(i.font) ? { font:i.font } : {}),
@@ -2759,7 +2792,7 @@ function examSides(it, first){
     if (head && rest) return { q:{ t:"text", s:head }, a:{ t:"text", s:rest } };
     return { q:{ t:"text", s:note }, a:null };
   }
-  const main = it.type === "image" ? { t:"img", src:it.src } : { t:"quote", s:it.text };
+  const main = it.type === "image" ? { t:"img", src:it.src } : it.type === "video" ? { t:"img", src:it.poster || "" } : { t:"quote", s:it.text };
   if (!note) return { q:main, a:null };
   const n = { t:"text", s:note };
   return first === "note" ? { q:n, a:main } : { q:main, a:n };
@@ -2887,15 +2920,111 @@ document.addEventListener("keydown", e => {
   if ($("#cam").hidden) return; e.stopImmediatePropagation();
   if (e.key === "Escape"){ e.preventDefault(); closeCamera(); } else if ((e.key === " " || e.key === "Enter") && !$("#camShot").disabled && document.activeElement !== $("#camFile") && document.activeElement !== $("#camClose")){ e.preventDefault(); $("#camShot").click(); }
 }, true);
-$("#bPhoto").onclick = () => { if (isNarrow()) setTab("ws"); openCamera(); };
+const isPhoneLike = () => /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+$("#bPhoto").onclick = () => { if (isNarrow()) setTab("ws"); if (isPhoneLike()) openPop($("#shotPop"), $("#bPhoto")); else openCamera(); };
+$("#shotPhoto").onclick = () => { closePop(); $("#fileShot").click(); };
+$("#shotFiles").onclick = () => { closePop(); $("#filePhoto").click(); };
+/* recording a video with the phone camera: the audio recording pauses meanwhile, so neither loses its sound */
+let clipCtx = null;
+$("#shotVideo").onclick = () => {
+  closePop();
+  const st = Rec.active ? { rec:Rec.active.id, t:r2(recElapsed()) } : null;
+  const paused = pauseRec(); clipCtx = { st, paused, done:false };
+  if (paused) toast("Ses kaydı video çekilirken duraklatıldı");
+  $("#fileClip").click();
+};
+function clipBack(){ if (!clipCtx || clipCtx.done) return; clipCtx.done = true; if (clipCtx.paused) resumeRec(); }
+$("#fileClip").addEventListener("change", async e => { const f = e.target.files[0], st = clipCtx && clipCtx.st; e.target.value = ""; clipBack(); if (f && S.proj) await addVideo(f, st); });
+$("#fileClip").addEventListener("cancel", clipBack);
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && clipCtx && !clipCtx.done) setTimeout(clipBack, 1500); });
+$("#fileShot").addEventListener("change", async e => { const f = e.target.files[0]; e.target.value = ""; if (!f || !S.proj) return; try { addPhoto(await downscaleImage(f, 1600, 0.85)); } catch { toast("Bu fotoğraf açılamadı."); } });
 $("#filePhoto").onchange = async e => {
   const files = [...e.target.files]; e.target.value = ""; if (!files.length || !S.proj) return;
-  for (const f of files){ try { addPhoto(await downscaleImage(f, 1600, 0.85)); } catch (err){ console.error(err); toast("Bu fotoğraf açılamadı."); } }
+  for (const f of files){
+    if (/^video\//.test(f.type) || /\.(mp4|mov|m4v|webm|3gp)$/i.test(f.name)){ await addVideo(f); continue; }
+    try { addPhoto(await downscaleImage(f, 1600, 0.85)); } catch (err){ console.error(err); toast("Bu fotoğraf açılamadı."); }
+  }
 };
+
+/* ================= videos: kept apart from the project like recordings; if the browser has no room, the video is saved on the device instead ================= */
+const fmtMB = b => b >= 1e9 ? (b / 1e9).toFixed(1).replace(".", ",") + " GB" : Math.max(1, Math.round((b || 0) / 1e6)) + " MB";
+const videoExt = m => /quicktime/.test(m || "") ? ".mov" : /webm/.test(m || "") ? ".webm" : /3gpp/.test(m || "") ? ".3gp" : ".mp4";
+const isApple = () => /iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+async function freeSpace(){ try { const e = await navigator.storage.estimate(); return e.quota ? e.quota - (e.usage || 0) : Infinity; } catch { return Infinity; } }
+async function videoMeta(file){
+  const url = URL.createObjectURL(file), v = document.createElement("video"); v.muted = true; v.playsInline = true; v.preload = "auto"; v.src = url;
+  try {
+    await new Promise((res, rej) => { v.onloadeddata = res; v.onerror = () => rej(new Error("video")); setTimeout(() => rej(new Error("timeout")), 20000); });
+    const dur = isFinite(v.duration) ? v.duration : 0, vw = v.videoWidth, vh = v.videoHeight; let poster = "";
+    try {
+      if (dur > 1){ v.currentTime = Math.min(1, dur / 4); await new Promise(res => { v.onseeked = res; setTimeout(res, 3000); }); }
+      const k = Math.min(1, 480 / Math.max(vw, vh, 1)), c = document.createElement("canvas"); c.width = Math.max(1, Math.round(vw * k)); c.height = Math.max(1, Math.round(vh * k));
+      c.getContext("2d").drawImage(v, 0, 0, c.width, c.height); poster = c.toDataURL("image/jpeg", 0.75);
+    } catch {}
+    return { dur, vw, vh, poster };
+  } finally { v.removeAttribute("src"); v.load(); URL.revokeObjectURL(url); }
+}
+async function saveToDevice(file){
+  if (isApple() && navigator.canShare && navigator.canShare({ files:[file] })){ try { await navigator.share({ files:[file], title:file.name }); return true; } catch (e){ if (e && e.name === "AbortError") return false; } }
+  downloadBlob(file, file.name); return true;
+}
+function videoCard(meta, file, vid, local, st){
+  const p = defaultSpot({ w:300, h:Math.round(272 * (meta.vh || 9) / (meta.vw || 16)) + 90 });
+  const it = (st && st.rec ? o => Object.assign(o, st) : stamp)({ id:uid(), type:"video", vid, name:file.name, mime:file.type || "video/mp4", size:file.size, dur:r2(meta.dur), vw:meta.vw, vh:meta.vh, ...(meta.poster ? { poster:meta.poster } : {}), ...(local ? { local:true } : {}), space:S.space, color:S.lastColor, note:"", w:300, x:p.x, y:p.y });
+  if (S.lastBg && S.lastBg !== "white") it.bg = S.lastBg; if (S.lastFrame && S.lastFrame !== "thin") it.frame = S.lastFrame; if (S.lastFont) it.font = S.lastFont;
+  S.proj.items.push(it); S.sel = it.id; renderWs(); commit(); showCardIfHidden(it.id); return it;
+}
+async function addVideo(f, st){
+  if (!S.proj) return;
+  const name = f.name && f.name !== "blob" ? f.name : `ED Note video ${new Date().toISOString().slice(0, 16).replace(/[:T]/g, "-")}${videoExt(f.type)}`;
+  const file = f.name === name ? f : new File([f], name, { type:f.type || "video/mp4" });
+  toast("Video hazırlanıyor…");
+  let meta; try { meta = await videoMeta(file); } catch { meta = { dur:0, vw:0, vh:0, poster:"" }; }
+  const need = file.size + 30e6, free = await freeSpace(), vid = "v" + uid();
+  let stored = false;
+  if (free > need){ try { await DB.put("blobs", { id:vid, blob:file, mime:file.type }); stored = true; } catch (e){ console.warn("video store", e); } }
+  if (stored){ const it = videoCard(meta, file, vid, false, st); toast(it.rec ? "Video kaydın bu anına bağlandı" : "Video masaya eklendi"); return; }
+  /* no room in the browser: offer to keep the video on the device and put only its card on the workspace */
+  banner(`Tarayıcıdaki alan bu video için yetmiyor (video ${fmtMB(file.size)}${isFinite(free) ? ", boş alan " + fmtMB(Math.max(0, free)) : ""}). Videoyu cihazına kaydedip masaya kartını ekleyeyim mi?`, [
+    { label:"Cihaza kaydet", primary:true, fn: async () => { if (await saveToDevice(file)){ videoCard(meta, file, vid, true, st); toast("Video cihazına kaydedildi. Karta dokununca dosyayı seçip izleyebilirsin.", null, 5000); } else toast("Video eklenmedi."); } },
+    { label:"Vazgeç", fn:() => toast("Video eklenmedi.") }
+  ], "err");
+}
+const VP = { url:null, it:null, file:null };
+async function openVideo(it){
+  const b = it.local ? null : await DB.get("blobs", it.vid).catch(() => null);
+  if (!b){
+    /* the video lives on the device (or another device): let the user pick the file */
+    const inp = document.createElement("input"); inp.type = "file"; inp.accept = "video/*";
+    inp.onchange = () => { const f = inp.files[0]; if (f) showVideo(it, f, true); };
+    toast(it.local ? `Bu video cihazında kayıtlı: ${it.name}. Dosyayı seç.` : `Video bu cihazda yok (${it.name}). Varsa dosyayı seç.`, null, 4000);
+    inp.click(); return;
+  }
+  showVideo(it, b.blob, false);
+}
+function showVideo(it, blob, fromDevice){
+  closeVideo(); VP.it = it; VP.file = blob; VP.url = URL.createObjectURL(blob);
+  const v = $("#vpVideo"); v.src = VP.url; $("#vpName").textContent = `${it.name} · ${fmtT(it.dur)} · ${fmtMB(blob.size || it.size)}`;
+  $("#vpSave").hidden = fromDevice; $("#vpKeep").hidden = !fromDevice;
+  $("#vplay").hidden = false; v.play().catch(() => {});
+}
+function closeVideo(){ const v = $("#vpVideo"); v.pause(); v.removeAttribute("src"); v.load(); if (VP.url) URL.revokeObjectURL(VP.url); VP.url = null; VP.it = null; VP.file = null; $("#vplay").hidden = true; }
+$("#vpClose").onclick = closeVideo;
+$("#vplay").addEventListener("click", e => { if (e.target === $("#vplay")) closeVideo(); });
+$("#vpSave").onclick = async () => { if (!VP.file || !VP.it) return; const f = VP.file instanceof File ? VP.file : new File([VP.file], VP.it.name, { type:VP.it.mime }); await saveToDevice(f); };
+$("#vpKeep").onclick = async () => {
+  const it = VP.it, f = VP.file; if (!it || !f) return;
+  if (await freeSpace() < f.size + 30e6){ toast("Tarayıcıda hâlâ yeterli yer yok."); return; }
+  try { await DB.put("blobs", { id:it.vid, blob:f, mime:it.mime }); delete it.local; it.size = f.size; renderWs(); commit(); $("#vpKeep").hidden = true; $("#vpSave").hidden = false; toast("Video projeye alındı."); }
+  catch { toast("Tarayıcıda hâlâ yeterli yer yok."); }
+};
+document.addEventListener("keydown", e => { if ($("#vplay").hidden) return; if (e.key === "Escape"){ e.stopImmediatePropagation(); closeVideo(); } }, true);
 
 /* ================= reading modes for PDF pages: normal, night, sepia ================= */
 function setReadMode(m){
   S.readMode = m || ""; document.body.classList.toggle("rm-night", m === "night"); document.body.classList.toggle("rm-sepia", m === "sepia");
+  if (m === "night") document.documentElement.dataset.theme = "dark"; else if (m === "sepia") document.documentElement.dataset.theme = "sepia"; else delete document.documentElement.dataset.theme;
+  const tc = m === "night" ? "#0f0f10" : m === "sepia" ? "#ede2c9" : null; document.querySelectorAll('meta[name="theme-color"]').forEach(x => { if (!x.dataset.orig) x.dataset.orig = x.content; x.content = tc || x.dataset.orig; });
   $("#readSeg").querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.m === S.readMode)));
   savePrefs();
 }
@@ -2912,6 +3041,7 @@ async function deleteLocalProject(id){
   const r = await DB.get("projects", id).catch(() => null); if (!r) return;
   const d = r.data || {};
   for (const x of d.recs || []) await DB.del("blobs", x.id).catch(() => {});
+  for (const x of d.items || []) if (x.type === "video" && x.vid) await DB.del("blobs", x.vid).catch(() => {});
   const others = (await DB.all("projects").catch(() => [])).filter(o => o.id !== id).flatMap(o => ((o.data && o.data.docs) || []).map(z => z.fp));
   for (const z of d.docs || []) if (!others.includes(z.fp)) await DB.del("pdfs", z.fp).catch(() => {});
   await DB.del("projects", id).catch(() => {}); await DB.del("meta", "dir:" + id).catch(() => {});
@@ -3033,6 +3163,12 @@ const OD = (() => {
       st.progress = "Ses kaydı gönderiliyor"; ui();
       R.audio.set(fn, await put("audio/" + fn, b.blob));
     }
+    for (const it of data.items || []){
+      if (it.type !== "video" || it.local) continue; const fn = it.vid + videoExt(it.mime); if (R.media.has(fn)) continue;
+      const b = await DB.get("blobs", it.vid).catch(() => null); if (!b) continue;
+      st.progress = "Video gönderiliyor: " + it.name.slice(0, 30); ui();
+      R.media.set(fn, await put("media/" + fn, b.blob));
+    }
   }
   async function pullAssets(data, R){
     for (const d of data.docs || []){
@@ -3045,6 +3181,13 @@ const OD = (() => {
       if (await DB.get("blobs", r.id).catch(() => null)) continue;
       const fn = r.id + audioExt(r.mime), it = R.audio.get(fn); if (!it) continue;
       await DB.put("blobs", { id:r.id, blob:await (await get(it, "audio/" + fn)).blob(), mime:r.mime });
+    }
+    for (const v of data.items || []){
+      if (v.type !== "video" || v.local || await DB.get("blobs", v.vid).catch(() => null)) continue;
+      const fn = v.vid + videoExt(v.mime), it = R.media.get(fn); if (!it) continue;
+      if (await freeSpace() < it.size + 30e6) continue; /* no room on this device: the card says so and the video stays on OneDrive */
+      st.progress = "Video alınıyor: " + v.name.slice(0, 30); ui();
+      try { await DB.put("blobs", { id:v.vid, blob:await (await get(it, "media/" + fn)).blob(), mime:v.mime }); } catch (e){ console.warn("video", e); }
     }
   }
   async function upload(rec, R, ifMatch){
@@ -3072,7 +3215,7 @@ const OD = (() => {
       if (S.proj && !S.sample){ clearTimeout(saveTimer); await saveNow(); }
       const tick = S.editTick || 0;
       const top = await list("", true), sub = n => top.has(n) ? list(n) : new Map();
-      const R = { projects:await sub("projects"), pdfs:await sub("pdfs"), audio:await sub("audio") };
+      const R = { projects:await sub("projects"), pdfs:await sub("pdfs"), audio:await sub("audio"), media:await sub("media") };
       /* deletions made on this device */
       for (const t of (await DB.all("meta")).filter(m => m.k.startsWith("od:del:"))){
         const id = t.k.slice(7), it = R.projects.get(id + ".json");
@@ -3257,6 +3400,6 @@ async function boot(){
     }).catch(() => {});
   }
 }
-window.EDNote = window.AlintiMasasi = { version:APP_VERSION, _S:S, _OD:OD };
+window.EDNote = window.AlintiMasasi = { version:APP_VERSION, _S:S, _OD:OD, _Rec:Rec };
 boot();
 })();
