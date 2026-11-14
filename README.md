@@ -187,3 +187,8 @@ Kimlik gizli bir şifre değildir, depoda durabilir. Gizli anahtar (client secre
 - Lisans aracında kimin hangi hesapla bağlı olduğu ve hangi cihazları kullandığı görünür; **Bağı çöz** ile kod yeni bir hesaba bağlanabilir.
 - Uygulamanın altında "Lisans: isim" yazar (isim Microsoft hesabından gelir).
 - `config.js` içindeki `licenseApiUrl` boşsa uygulama eskisi gibi sadece listeye bakar.
+
+## Sürüm 6.9.2
+
+- Android uygulamasında Microsoft girişinden (lisans ve OneDrive) dönünce çıkan "Web sayfası mevcut değil, ERR_CONNECTION_REFUSED" hatası düzeltildi (`MainActivity.java`).
+- Giriş ekranında kişisel Microsoft hesabı öneriliyor.

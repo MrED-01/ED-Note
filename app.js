@@ -2,7 +2,7 @@
    adjustable stroke sizes, straight lines and the .ednote file format */
 (() => {
 "use strict";
-const APP_VERSION = "6.9.1";
+const APP_VERSION = "6.9.2";
 /* COMPATIBILITY RULE: every release must open and edit files from every earlier release.
    SCHEMA is the data version written to project.json. cleanProject() upgrades any older shape
    (v3 single-PDF files go through migrateV3 first) and never drops user content. Fixture files from
@@ -3706,7 +3706,7 @@ function showLicGate(kind){
     none:["Lisans kodu", "ED Note'u kullanmak için sana verilen lisans kodunu gir. Kod EDN- ile başlar."],
     revoked:["Lisans geçerli değil", "Bu cihazdaki lisans kodu artık geçerli değil. Yeni bir kod girebilirsin. Notların bu cihazda duruyor; aşağıdan dışa aktarabilirsin."],
     stale:["İnternete bağlan", "Lisans 7 günden uzun süredir doğrulanamadı. İnternete bağlanıp Tekrar dene'ye bas. Notların bu cihazda güvende."],
-    login:["Microsoft hesabınla doğrula", "Lisansın artık bir Microsoft hesabına bağlanıyor (okul hesabın da olur). Bir kere giriş yapman yeterli; sonra aynı hesapla istediğin kadar cihazda kullanırsın. Notların bu cihazda duruyor."]
+    login:["Microsoft hesabınla doğrula", "Lisansın artık bir Microsoft hesabına bağlanıyor. Kişisel hesabını (outlook, hotmail ya da Microsoft hesabı açtığın e-posta) kullanman önerilir; okul hesapları mezuniyetle kapanır. Bir kere giriş yapman yeterli; sonra aynı hesapla istediğin kadar cihazda kullanırsın. Notların bu cihazda duruyor."]
   }[kind] || ["Lisans kodu", ""];
   if (kind === "none" && LIC.API) T[1] += " Sonra Microsoft hesabınla bir kere giriş yapacaksın; kod o hesaba bağlanır.";
   $("#licTitle").textContent = T[0]; $("#licText").textContent = T[1]; $("#licMsg").textContent = "";
