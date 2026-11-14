@@ -1,3 +1,5 @@
+# Builds the ED Note Android app (APK) on GitHub's computers every time files are uploaded.
+# The APK appears under Actions > the latest run > Artifacts > ED-Note-APK.
 name: Android APK
 
 on:
@@ -12,6 +14,8 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      HAS_LISANS_TOKEN: ${{ secrets.LISANS_TOKEN != '' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -53,3 +57,24 @@ jobs:
           name: ED-Note-APK
           path: ED-Note-*.apk
           retention-days: 30
+
+      # Puts the APK on the public ednote-lisans page and tells the installed apps that a new version is out.
+      - name: Publish update
+        if: env.HAS_LISANS_TOKEN == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.LISANS_TOKEN }}
+          MSG: ${{ github.event.head_commit.message }}
+          RUN: ${{ github.run_number }}
+        run: |
+          VER=$(grep -oP 'APP_VERSION = "\K[^"]+' app.js)
+          TAG="v${VER}-${RUN}"
+          NOTES=$(printf '%s' "$MSG" | head -n1)
+          case "$NOTES" in ""|"Add files via upload"|Update*|Create*|Delete*|Merge*) NOTES="";; esac
+          cp "ED-Note-${RUN}.apk" ED-Note.apk
+          gh release create "$TAG" ED-Note.apk --repo MrED-01/ednote-lisans --title "ED Note $VER ($RUN)" --notes "${NOTES:-ED Note $VER}" --latest
+          URL="https://github.com/MrED-01/ednote-lisans/releases/download/$TAG/ED-Note.apk"
+          gh api repos/MrED-01/ednote-lisans/contents/liste.json > cur.json
+          SHA=$(jq -r .sha cur.json)
+          jq -r .content cur.json | base64 -d > liste.json
+          jq --argjson b "$RUN" --arg v "$VER" --arg u "$URL" --arg n "$NOTES" '.latest = {build:$b, version:$v, url:$u, notes:$n}' liste.json > new.json
+          gh api -X PUT repos/MrED-01/ednote-lisans/contents/liste.json -f message="Sürüm $VER ($RUN)" -f sha="$SHA" -f content="$(base64 -w0 new.json)"
