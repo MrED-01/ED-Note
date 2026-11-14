@@ -2,7 +2,7 @@
 <html lang="tr">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <title>ED Note</title>
 <meta name="description" content="PDF okuma, alıntılama, kalemle not alma ve ses kaydı.">
 <meta name="theme-color" content="#f3f3f1" media="(prefers-color-scheme: light)">
@@ -52,6 +52,18 @@ if (!/^https?:$/.test(location.protocol)) document.addEventListener("DOMContentL
     </section>
     <button class="link" id="hSample">Örnek belgeyle dene</button>
     <p class="app-ver" id="appVer"></p>
+  </div>
+</div>
+
+<div class="licgate" id="licGate" hidden role="dialog" aria-modal="true" aria-labelledby="licTitle">
+  <div class="lic-box">
+    <svg class="logo-mark lic-logo" viewBox="22 50 624 546" aria-hidden="true"><path fill="currentColor" fill-rule="evenodd" d="M166 50 L640 64 C602 78 542 116 522 156 C517 166 516 172 516 178 L352 180 L348 236 L500 238 C596 240 646 304 646 386 L646 424 C646 520 592 576 498 580 L124 584 C164 548 180 500 184 440 L188 392 C182 368 150 360 112 366 C78 372 46 384 22 397 C70 330 146 264 204 262 L206 140 C206 104 192 72 166 50 Z M352 380 L512 380 L514 346 C556 350 582 378 583 412 L584 452 C582 498 550 524 500 532 C512 512 522 496 522 480 L514 470 L352 470 Z"/></svg>
+    <h2 id="licTitle">Lisans kodu</h2>
+    <p id="licText"></p>
+    <input id="licCode" type="text" inputmode="text" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="EDN-XXXX-XXXX-XXXX" aria-label="Lisans kodu">
+    <button class="btn primary lg" id="licGo">Etkinleştir</button>
+    <p class="lic-msg" id="licMsg" role="status"></p>
+    <div class="lic-more"><button class="btn sm" id="licRetry" hidden>Tekrar dene</button><button class="btn sm" id="licExport" hidden>Projelerimi dışa aktar</button></div>
   </div>
 </div>
 

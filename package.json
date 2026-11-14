@@ -1,0 +1,21 @@
+{
+  "name": "ed-note",
+  "version": "6.8.2",
+  "private": true,
+  "description": "ED Note: PDF okuma, alıntı ve not masası",
+  "scripts": {
+    "build": "node scripts/build-web.mjs",
+    "android": "npm run build && npx cap sync android"
+  },
+  "dependencies": {
+    "@capacitor/android": "8.6.2",
+    "@capacitor/app": "8.1.2",
+    "@capacitor/core": "8.6.2",
+    "@capacitor/filesystem": "8.1.5",
+    "@capacitor/share": "8.0.3"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "8.6.2",
+    "terser": "5.36.0"
+  }
+}

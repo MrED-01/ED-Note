@@ -136,3 +136,20 @@ Kimlik gizli bir şifre değildir, depoda durabilir. Gizli anahtar (client secre
 
 - **Bilgisayarda video:** Kamera penceresinde üstte **Fotoğraf / Video** seçimi var. Video seçiliyken yuvarlak düğme kırmızı olur: bir basış başlatır, bir basış durdurur (Boşluk tuşu da aynı). Süre ve boyut kayıt sırasında görünür. Ses kaydı sürüyorsa video boyunca duraklar, sonra devam eder. Pencereyi kapatmak kaydı durdurur ve videoyu saklar.
 - **Tek basış, tek fotoğraf:** Boşluk tuşuna art arda ya da basılı tutarak basınca artık sadece bir fotoğraf çekilir.
+
+## Sürüm 6.8: Android uygulaması ve lisans
+
+- **Lisans:** Uygulama açılışta lisans kodu ister (EDN-XXXX-XXXX-XXXX). Kod, `ednote-lisans` deposundaki `liste.json` ile karşılaştırılır; listede kodların sadece özeti durur. Uygulama günde en fazla iki kez listeye bakar. İnternet yoksa 7 gün daha çalışır. Listeden çıkarılan kod en geç bir gün içinde kilitlenir; kilitliyken bile projeler dışa aktarılabilir, notlar silinmez. Kodlar `lisans-araci.html` ile üretilir (bu dosya depoda değil, sadece Ekrem'de).
+- **Android:** Depo bir Capacitor projesi. Her yüklemede GitHub Actions APK üretir (Actions > son çalışma > Artifacts > ED-Note-APK). APK aynı anahtarla imzalanır, yeni sürüm eskisinin üstüne kurulur ve notlar kalır. İmza anahtarı depoda değil, GitHub Secrets'ta: `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`.
+- Uygulama içinde dışa aktarılan dosyalar (.ednote, notlu PDF, Markdown, video) paylaş menüsüyle kaydedilir ya da gönderilir. Android geri tuşu açık pencereyi kapatır, editörden ana ekrana döner.
+- Uygulamadaki kod küçültülmüş (okunması zor) hâlde paketlenir.
+- OneDrive'ın uygulamada çalışması için Entra kaydına ikinci yönlendirme adresi eklenir: `https://localhost/` (Tek sayfalı uygulama).
+
+## Sürüm 6.8.1
+
+- **Tabletlerde yan yana görünüm:** Tablet dikey tutulduğunda da belge solda, masa sağda durur (bilgisayardaki gibi). Aradaki çizgiyi sürükleyerek genişlikler ayarlanır. Sadece telefonlarda (dar ekran ya da yatay tutulan telefon) Belge / Masa sekmeleri kullanılır.
+
+## Sürüm 6.8.2
+
+- **Sadece belge yakınlaşır:** Belge penceresinde iki parmakla (telefon, tablet) ya da Ctrl + fare tekerleği / dokunmatik yüzeyde iki parmak (bilgisayar) ile yakınlaştırınca sadece PDF sayfası büyür; parmakların altındaki yer yerinde kalır. Uygulamanın geri kalanı (araç çubuğu, menüler, düğmeler) hiç büyüyüp küçülmez. Ctrl + / Ctrl - / Ctrl 0 de belgeyi yakınlaştırır, uzaklaştırır, genişliğe sığdırır. Tekerlek tek başına sayfaları kaydırır.
+- **Parmağa uygun düğmeler:** Telefon ve tablette düğmeler en az 40 ile 44 piksel; araç çubuğu, menüler, kart düğmeleri, renk noktaları, etiketler büyüdü. Dokunmatik ekranda belgenin - / + düğmeleri gizlenir (iki parmak yeterli), masa çubuğunda da - / + yerine iki parmak kullanılır.

@@ -15,6 +15,8 @@ const check = (name, cond, msg) => { if (!cond){ failed++; console.log(`  FAIL $
   const b = await chromium.launch();
   for (const [file, exp] of Object.entries(expected)){
     const ctx = await b.newContext({ viewport:{ width:1440, height:900 }, acceptDownloads:true });
+    /* the test runs without the licence gate and without OneDrive */
+    await ctx.route("**/config.js", r => r.fulfill({ status:200, headers:{ "Content-Type":"application/javascript" }, body:"window.ED_CONFIG = {};" }));
     const p = await ctx.newPage(); const errs = [];
     p.on("pageerror", e => errs.push(e.message)); p.on("console", m => { if (m.type() === "error") errs.push(m.text()); });
     await p.goto(BASE); await p.waitForTimeout(600);

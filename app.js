@@ -2,7 +2,7 @@
    adjustable stroke sizes, straight lines and the .ednote file format */
 (() => {
 "use strict";
-const APP_VERSION = "6.7.2";
+const APP_VERSION = "6.8.2";
 /* COMPATIBILITY RULE: every release must open and edit files from every earlier release.
    SCHEMA is the data version written to project.json. cleanProject() upgrades any older shape
    (v3 single-PDF files go through migrateV3 first) and never drops user content. Fixture files from
@@ -86,7 +86,7 @@ const fmtT = s => { s = Math.max(0, Math.floor(s || 0)); const h = Math.floor(s 
 const fmtDate = d => { try { return new Intl.DateTimeFormat("tr", { day:"numeric", month:"short", hour:"2-digit", minute:"2-digit" }).format(new Date(d)); } catch { return ""; } };
 const stripPdf = n => String(n || "").replace(/\.pdf$/i, "");
 const ls = { get(k){ try { return localStorage.getItem(k); } catch { return null; } }, set(k, v){ try { localStorage.setItem(k, v); } catch {} } };
-const narrowMQ = window.matchMedia("(max-width: 820px)");
+const narrowMQ = window.matchMedia("(max-width: 640px), (max-height: 520px) and (max-width: 1000px)"); /* phones; tablets keep the side-by-side layout */
 const isNarrow = () => narrowMQ.matches;
 
 /* the workspace is a sheet of paper with a fixed size (units: 1 = 1 pt, so it maps 1:1 to the PDF export) */
@@ -386,6 +386,7 @@ function makeViewer(idx){
   const pages = document.createElement("div"); pages.className = "pages"; pane.appendChild(pages);
   root.append(head, pane);
   Object.assign(v, { root, head, tabs, pane, pagesEl:pages, pgEl:pg });
+  attachPdfZoom(v);
   pane.addEventListener("scroll", () => { updatePgInfo(v); if (!el.chip.hidden && !chipDrag) positionChip(); scheduleX(); }, { passive:true });
   root.addEventListener("pointerdown", () => { if (S.av !== idx){ S.av = idx; markActive(); } }, true);
   attachPaneHandlers(v);
@@ -455,6 +456,55 @@ function setScale(v, s, initial){
   v.root.querySelectorAll(".tbox textarea").forEach(autosize);
   observePages(v); updatePgInfo(v); scheduleX();
 }
+/* zoom inside the document pane only: two fingers on touch screens, Ctrl + mouse wheel (or touchpad pinch) on a computer.
+   While the fingers move, the pages are only stretched (fast); when they lift, the pages are drawn sharp at the new size,
+   keeping the spot under the fingers in place. The rest of the app never zooms. */
+function previewPdfZoom(v, z){ v.pagesEl.style.transformOrigin = `${z.x}px ${z.y}px`; v.pagesEl.style.transform = `translate(${z.cx - z.cx0}px, ${z.cy - z.cy0}px) scale(${z.k})`; }
+function commitPdfZoom(v, z){
+  const s = clamp(z.s0 * z.k, 0.3, 4), f = s / z.s0;
+  v.pagesEl.style.transform = ""; v.pagesEl.style.transformOrigin = "";
+  if (Math.abs(f - 1) < 0.01) return;
+  setScale(v, s);
+  v.pane.scrollLeft = z.x * f - z.cx; v.pane.scrollTop = z.y * f - z.cy;
+  updatePgInfo(v); scheduleX();
+}
+function attachPdfZoom(v){
+  const pane = v.pane; let pz = null;
+  const dist = (a, b) => Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+  const mid = (a, b) => { const r = pane.getBoundingClientRect(); return { x:(a.clientX + b.clientX) / 2 - r.left, y:(a.clientY + b.clientY) / 2 - r.top }; };
+  pane.addEventListener("touchstart", e => {
+    if (e.touches.length !== 2 || !v.pdf) return;
+    e.preventDefault();
+    if (draw && draw.where === "pdf" && draw.v === v){ cancelAnimationFrame(draw.raf); if (draw.path) draw.path.remove(); draw = null; }
+    const [a, b] = e.touches, m = mid(a, b);
+    pz = { d0:Math.max(1, dist(a, b)), s0:v.scale, k:1, cx0:m.x, cy0:m.y, cx:m.x, cy:m.y, x:pane.scrollLeft + m.x, y:pane.scrollTop + m.y };
+  }, { passive:false });
+  pane.addEventListener("touchmove", e => {
+    if (!pz) return; e.preventDefault(); if (e.touches.length < 2) return;
+    const [a, b] = e.touches, m = mid(a, b);
+    pz.k = clamp(pz.s0 * dist(a, b) / pz.d0, 0.3, 4) / pz.s0; pz.cx = m.x; pz.cy = m.y; previewPdfZoom(v, pz);
+  }, { passive:false });
+  const end = e => { if (!pz || e.touches.length >= 2) return; const z = pz; pz = null; commitPdfZoom(v, z); };
+  pane.addEventListener("touchend", end); pane.addEventListener("touchcancel", end);
+  pane.addEventListener("wheel", e => {
+    if (!(e.ctrlKey || e.metaKey) || !v.pdf) return;
+    e.preventDefault();
+    const r = pane.getBoundingClientRect(), cx = e.clientX - r.left, cy = e.clientY - r.top;
+    if (!v.wz) v.wz = { s0:v.scale, k:1, cx0:cx, cy0:cy, cx, cy, x:pane.scrollLeft + cx, y:pane.scrollTop + cy };
+    const z = v.wz; z.k = clamp(z.s0 * z.k * Math.exp(-e.deltaY * (e.deltaMode ? 0.05 : 0.0025)), 0.3, 4) / z.s0; z.cx = cx; z.cy = cy;
+    previewPdfZoom(v, z); clearTimeout(v.wzT); v.wzT = setTimeout(() => { const zz = v.wz; v.wz = null; if (zz) commitPdfZoom(v, zz); }, 200);
+  }, { passive:false });
+}
+/* the browser itself never zooms the whole app (pinch, Ctrl + wheel, Ctrl +/-): toolbars and buttons keep their size */
+window.addEventListener("wheel", e => { if (e.ctrlKey || e.metaKey) e.preventDefault(); }, { passive:false });
+for (const ev of ["gesturestart", "gesturechange", "gestureend"]) document.addEventListener(ev, e => e.preventDefault(), { passive:false });
+document.addEventListener("keydown", e => {
+  if (!(e.ctrlKey || e.metaKey) || !["+", "=", "-", "0"].includes(e.key)) return;
+  e.preventDefault();
+  if (document.body.dataset.view !== "editor" || !S.proj) return;
+  const v = AV(); if (!v || !v.pdf) return;
+  if (e.key === "0") fitWidth(v); else setScale(v, clamp(v.scale * (e.key === "-" ? 1 / 1.2 : 1.2), 0.3, 4));
+}, true);
 function observePages(v){
   if (v.io) v.io.disconnect(); if (v.io2) v.io2.disconnect();
   v.io = new IntersectionObserver(entries => { for (const e of entries) if (e.isIntersecting){ const p = v.pages[+e.target.dataset.page - 1]; if (p && p.rendered !== v.scale) renderPage(v, p); } }, { root:v.pane, rootMargin:"800px 0px" });
@@ -2050,7 +2100,24 @@ el.docTitle.addEventListener("keydown", e => { if (e.key === "Enter"){ e.prevent
 el.docTitle.addEventListener("blur", () => { if (!el.docTitle.isContentEditable) return; el.docTitle.contentEditable = "false"; const n = el.docTitle.textContent.trim(); if (n){ S.proj.name = n; document.title = n + " · " + APP_NAME; save(); } else el.docTitle.textContent = S.proj.name; });
 
 /* ================= export / import ================= */
-function downloadBlob(blob, filename){ const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = filename; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000); }
+/* inside the Android app there are no browser downloads: files are written to the app's cache and handed to the share sheet (Save to Files, Drive, WhatsApp...) */
+const NATIVE = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
+const capPlugin = n => window.Capacitor && ((window.Capacitor.Plugins && window.Capacitor.Plugins[n]) || (window.Capacitor.registerPlugin && window.Capacitor.registerPlugin(n)));
+const blobToB64 = b => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(",")[1] || ""); r.onerror = rej; r.readAsDataURL(b); });
+async function nativeSave(blob, name){
+  const FS = capPlugin("Filesystem"), SH = capPlugin("Share"), path = "export/" + String(name).replace(/[\\/:*?"<>|]+/g, "_");
+  try { await FS.deleteFile({ path, directory:"CACHE" }); } catch {}
+  const CH = 3 * 1024 * 1024; /* a multiple of 3 bytes, so every piece is valid base64 on its own */
+  if (!blob.size) await FS.writeFile({ path, data:"", directory:"CACHE", recursive:true });
+  for (let o = 0; o < blob.size; o += CH){
+    const data = await blobToB64(blob.slice(o, o + CH));
+    if (o === 0) await FS.writeFile({ path, data, directory:"CACHE", recursive:true }); else await FS.appendFile({ path, data, directory:"CACHE" });
+  }
+  const { uri } = await FS.getUri({ path, directory:"CACHE" });
+  try { await SH.share({ title:name, files:[uri], dialogTitle:"Kaydet ya da gönder" }); } catch (e){ if (!/cancel/i.test(String(e && e.message))) throw e; }
+}
+function downloadBlob(blob, filename){
+  if (NATIVE){ nativeSave(blob, filename).catch(e => { console.error(e); toast("Dosya hazırlanamadı."); }); return; } const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = filename; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000); }
 async function buildZip(projRec){
   const data = projRec.data, zip = new JSZip();
   zip.file("mimetype", EDNOTE_MIME, { compression:"STORE" });
@@ -3361,6 +3428,84 @@ const OD = (() => {
   return { boot, sync, soon, forget, login, ui, enabled, _st:st };
 })();
 
+/* ================= licence: a personal code, checked against Ekrem's list about once a day; 7 days of grace offline ================= */
+const LIC = (() => {
+  const CFG = window.ED_CONFIG || {}, LIST = String(CFG.licenseListUrl || ""), ON = !!LIST;
+  const KEY = "ednote:lic", DAY = 864e5, GRACE = 7 * DAY;
+  const ALPH = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
+  const norm = c => String(c || "").toUpperCase().replace(/O/g, "0").replace(/[IL]/g, "1").replace(/U/g, "V").replace(/[^0-9A-Z]/g, "").replace(/^EDN/, "");
+  const pretty = c => "EDN-" + (norm(c).match(/.{1,4}/g) || []).join("-");
+  async function hashOf(c){ const b = await crypto.subtle.digest("SHA-256", new TextEncoder().encode("ednote-v1:" + norm(c))); return [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, "0")).join(""); }
+  const load = () => { try { return JSON.parse(ls.get(KEY) || "null"); } catch { return null; } };
+  const store = st => ls.set(KEY, JSON.stringify(st));
+  async function list(){
+    const r = await fetch(LIST + (LIST.includes("?") ? "&" : "?") + "t=" + Date.now(), { cache:"no-store" });
+    if (!r.ok) throw new Error("list " + r.status);
+    const j = await r.json(); if (!j || !Array.isArray(j.codes)) throw new Error("list format"); return j;
+  }
+  /* "ok", "none" (no code yet), "revoked" (removed from the list), "stale" (no check for over 7 days) */
+  async function state(force){
+    if (!ON) return "ok";
+    const st = load(); if (!st || !st.h) return "none";
+    const now = Date.now();
+    if (force || now - (st.chk || 0) > DAY / 2){
+      try { const j = await list(); st.chk = now; if (j.codes.includes(st.h)){ st.ok = now; delete st.rev; } else st.rev = true; store(st); }
+      catch { /* offline: try again later */ }
+    }
+    if (st.rev) return "revoked";
+    return now - (st.ok || 0) <= GRACE ? "ok" : "stale";
+  }
+  async function activate(code){
+    const n = norm(code); if (n.length < 12 || [...n].some(ch => !ALPH.includes(ch))) return "bad";
+    let j; try { j = await list(); } catch { return "offline"; }
+    const h = await hashOf(n); if (!j.codes.includes(h)) return "bad";
+    const now = Date.now(); store({ code:pretty(n), h, ok:now, chk:now }); return "ok";
+  }
+  const info = () => { const st = load(); return st && st.code ? st.code : ""; };
+  return { ON, state, activate, info, pretty, hashOf, norm };
+})();
+let licShown = false;
+function showLicGate(kind){
+  const g = $("#licGate"); licShown = true; document.body.classList.add("lic-locked");
+  const T = {
+    none:["Lisans kodu", "ED Note'u kullanmak için sana verilen lisans kodunu gir. Kod EDN- ile başlar."],
+    revoked:["Lisans geçerli değil", "Bu cihazdaki lisans kodu artık geçerli değil. Yeni bir kod girebilirsin. Notların bu cihazda duruyor; aşağıdan dışa aktarabilirsin."],
+    stale:["İnternete bağlan", "Lisans 7 günden uzun süredir doğrulanamadı. İnternete bağlanıp Tekrar dene'ye bas. Notların bu cihazda güvende."]
+  }[kind] || ["Lisans kodu", ""];
+  $("#licTitle").textContent = T[0]; $("#licText").textContent = T[1]; $("#licMsg").textContent = "";
+  $("#licRetry").hidden = kind !== "stale"; $("#licExport").hidden = kind === "none";
+  g.hidden = false; if (kind !== "stale" && !matchMedia("(pointer:coarse)").matches) $("#licCode").focus();
+}
+function hideLicGate(){ $("#licGate").hidden = true; licShown = false; document.body.classList.remove("lic-locked"); $("#appVer").textContent = "ED Note " + APP_VERSION + (LIC.info() ? " · " + LIC.info() : ""); }
+async function licCheck(force){
+  if (!LIC.ON) return true;
+  const st = await LIC.state(force);
+  if (st === "ok"){ if (licShown) hideLicGate(); else $("#appVer").textContent = "ED Note " + APP_VERSION + " · " + LIC.info(); return true; }
+  if (Rec.active) await stopRecording(); if (S.proj && !S.sample){ clearTimeout(saveTimer); try { await saveNow(); } catch {} }
+  if (document.body.dataset.view === "editor"){ S.proj = null; setView("home"); }
+  showLicGate(st); return false;
+}
+$("#licGo").onclick = async () => {
+  const b = $("#licGo"); b.disabled = true; $("#licMsg").textContent = "Kontrol ediliyor…";
+  const r = await LIC.activate($("#licCode").value); b.disabled = false;
+  if (r === "ok"){ hideLicGate(); toast("Lisans etkinleştirildi. Hoş geldin!"); return; }
+  $("#licMsg").textContent = r === "offline" ? "İnternet bağlantısı yok. İlk etkinleştirme için internet gerekiyor." : "Bu kod geçerli değil. Harfleri kontrol et ya da Ekrem'den yeni kod iste.";
+};
+$("#licCode").addEventListener("keydown", e => { if (e.key === "Enter") $("#licGo").click(); });
+$("#licCode").addEventListener("input", e => { const t = e.target, n = LIC.norm(t.value); if (n.length >= 4 && !/[^0-9A-Z-]/.test(t.value.toUpperCase())) t.value = LIC.pretty(n); });
+$("#licRetry").onclick = () => licCheck(true);
+$("#licExport").onclick = async () => { const rs = await DB.all("projects").catch(() => []); if (!rs.length){ toast("Bu cihazda proje yok."); return; } for (const r of rs) await exportZip(r.id); };
+document.addEventListener("keydown", e => { if (licShown && !(e.target && e.target.closest && e.target.closest("#licGate"))) e.stopImmediatePropagation(); }, true);
+
+/* ================= Android: back button ================= */
+if (NATIVE){
+  const App = capPlugin("App");
+  if (App && App.addListener) App.addListener("backButton", () => {
+    if (!$("#vplay").hidden) closeVideo(); else if (!$("#cam").hidden) closeCamera(); else if (!$("#exam").hidden) closeExam();
+    else if (openPopEl) closePop(); else if (document.body.dataset.view === "editor") $("#bHome").click(); else App.exitApp();
+  });
+}
+
 /* ================= splitter ================= */
 (function(){
   const main = $("#main"), split = $("#split");
@@ -3449,7 +3594,10 @@ async function boot(){
   S.recMode = ls.get("alinti:recMode") === "keep" ? "keep" : "trace"; renderRecModeIcon();
   await migrateOld();
   setView("home"); $("#appVer").textContent = "ED Note " + APP_VERSION;
-  OD.boot().then(async back => { if (back && back.back){ const r = await DB.get("projects", back.back).catch(() => null); if (r && r.data && document.body.dataset.view === "home") openProject(r.data); } }).catch(e => console.warn(e));
+  const licOk = await licCheck(false);
+  setInterval(() => licCheck(false), 6 * 3600e3);
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") licCheck(false); });
+  (licOk ? OD.boot() : Promise.resolve(null)).then(async back => { if (back && back.back){ const r = await DB.get("projects", back.back).catch(() => null); if (r && r.data && document.body.dataset.view === "home") openProject(r.data); } }).catch(e => console.warn(e));
   if ("launchQueue" in window) window.launchQueue.setConsumer(async lp => { if (lp.files && lp.files.length){ const f = await lp.files[0].getFile(); if (/\.(ednote|zip)$/i.test(f.name)) importZip(f); else openPdfFile(f, "new"); } });
   if ("serviceWorker" in navigator && /^https?:/.test(location.protocol) && location.hostname !== "localhost" && location.hostname !== "127.0.0.1"){
     navigator.serviceWorker.register("sw.js").then(reg => {
@@ -3457,6 +3605,6 @@ async function boot(){
     }).catch(() => {});
   }
 }
-window.EDNote = window.AlintiMasasi = { version:APP_VERSION, _S:S, _OD:OD, _Rec:Rec };
+window.EDNote = window.AlintiMasasi = { version:APP_VERSION, _S:S, _OD:OD, _Rec:Rec, _save:nativeSave };
 boot();
 })();
