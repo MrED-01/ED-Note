@@ -2,7 +2,7 @@
    adjustable stroke sizes, straight lines and the .ednote file format */
 (() => {
 "use strict";
-const APP_VERSION = "6.8.3";
+const APP_VERSION = "6.9.1";
 /* COMPATIBILITY RULE: every release must open and edit files from every earlier release.
    SCHEMA is the data version written to project.json. cleanProject() upgrades any older shape
    (v3 single-PDF files go through migrateV3 first) and never drops user content. Fixture files from
@@ -1018,13 +1018,13 @@ async function pageStrings(fp, n){
 }
 function clearSearch(){ S.search = { q:"", hits:[], idx:-1, pending:null }; el.qCount.textContent = ""; document.querySelectorAll(".textLayer span.hit").forEach(s => s.classList.remove("hit", "on")); if (openPopEl === el.searchPop) closePop(); }
 async function runSearch(q){
-  q = q.trim().toLocaleLowerCase("tr"); clearSearch(); if (!q || !S.proj) return;
+  q = q.trim().toLocaleLowerCase("tr").replace(/ı/g, "i"); clearSearch(); if (!q || !S.proj) return;
   S.search.q = q; const hits = [];
   for (const d of S.proj.docs){
     const pdf = await loadPdfDoc(d.fp); if (!pdf) continue;
     for (let n = 1; n <= pdf.numPages; n++){
       const strs = await pageStrings(d.fp, n); if (S.search.q !== q) return;
-      let k = 0; for (const s of strs){ const i = s.toLocaleLowerCase("tr").indexOf(q); if (i >= 0) hits.push({ fp:d.fp, page:n, k:k++, s, i }); }
+      let k = 0; for (const s of strs){ const i = s.toLocaleLowerCase("tr").replace(/ı/g, "i").indexOf(q); if (i >= 0) hits.push({ fp:d.fp, page:n, k:k++, s, i }); }
     }
   }
   S.search.hits = hits; el.qCount.textContent = String(hits.length);
@@ -1047,7 +1047,7 @@ function renderResults(show){
   });
   if (show && (document.activeElement === el.q || openPopEl === el.searchPop)) openPop(el.searchPop, el.searchbar);
 }
-function spanHits(p){ if (!p.text || !S.search.q) return []; return [...p.text.querySelectorAll("span:not(.markedContent)")].filter(s => s.textContent.length && s.textContent.toLocaleLowerCase("tr").includes(S.search.q)); }
+function spanHits(p){ if (!p.text || !S.search.q) return []; return [...p.text.querySelectorAll("span:not(.markedContent)")].filter(s => s.textContent.length && s.textContent.toLocaleLowerCase("tr").replace(/ı/g, "i").includes(S.search.q)); }
 function markSearchHits(v, p){
   const spans = spanHits(p); spans.forEach(s => s.classList.add("hit"));
   const cur = S.search.hits[S.search.idx];
@@ -1073,7 +1073,7 @@ let qTimer;
 el.q.addEventListener("input", () => { clearTimeout(qTimer); qTimer = setTimeout(() => runSearch(el.q.value), 300); });
 el.q.addEventListener("focus", () => { if (S.search.hits.length) openPop(el.searchPop, el.searchbar); });
 el.q.addEventListener("keydown", e => {
-  if (e.key === "Enter"){ e.preventDefault(); clearTimeout(qTimer); if (S.search.q !== el.q.value.trim().toLocaleLowerCase("tr")) runSearch(el.q.value).then(() => gotoHit(0)); else { closePop(); gotoHit(S.search.idx + (e.shiftKey ? -1 : 1)); } }
+  if (e.key === "Enter"){ e.preventDefault(); clearTimeout(qTimer); if (S.search.q !== el.q.value.trim().toLocaleLowerCase("tr").replace(/ı/g, "i")) runSearch(el.q.value).then(() => gotoHit(0)); else { closePop(); gotoHit(S.search.idx + (e.shiftKey ? -1 : 1)); } }
   if (e.key === "Escape") toggleSearch(false);
 });
 $("#qNext").onclick = () => { closePop(); gotoHit(S.search.idx + 1); };
@@ -2168,7 +2168,9 @@ async function importZip(file){
     if (!proj.id) proj.id = "p" + uid();
     const existing = await DB.get("projects", proj.id).catch(() => null);
     if (existing && existing.updated > Date.parse(proj.savedAt || 0) + 1000) toast("Bu cihazdaki sürüm daha yeniydi, içe aktarılan sürümle değiştirildi.", null, 5000);
-    const clean = cleanProject(proj);
+    const clean = cleanProject(proj); delete clean.trashed;
+    /* imported into the folder you are looking at; otherwise it keeps the folder it was exported from */
+    if (LIB.view === "proj" && LIB.path) clean.folder = LIB.path; else if (existing && existing.data) { if (cleanPath(existing.data.folder)) clean.folder = cleanPath(existing.data.folder); else delete clean.folder; }
     await DB.put("projects", { id:clean.id, name:clean.name, updated:Date.now(), data:clean });
     await openProject(clean); toast("Proje içe aktarıldı");
   } catch (e){ console.error(e); toast("Proje dosyası okunamadı."); }
@@ -2186,7 +2188,7 @@ async function openFolderProject(){
       const f = await (await dir.getFileHandle("document.pdf")).getFile(); const { fp } = await ingestPdf(new Uint8Array(await f.arrayBuffer()), proj.pdfName || "Belge.pdf");
       proj = migrateV3(proj, fp, proj.pdfName);
     }
-    const clean = cleanProject(proj);
+    const clean = cleanProject(proj); delete clean.trashed; if (LIB.view === "proj" && LIB.path) clean.folder = LIB.path;
     await DB.put("projects", { id:clean.id, name:clean.name, updated:Date.now(), data:clean });
     await DB.put("meta", { k:"dir:" + clean.id, h:dir });
     await openProject(clean);
@@ -2645,6 +2647,7 @@ function cleanProject(p){
   q.pins = q.pins.filter(n => pinUsed(q.links, n.id));
   q.recs = (p.recs || []).filter(r => r && typeof r.id === "string").map(r => ({ id:r.id, title:String(r.title || "Kayıt"), doc:fps.has(r.doc) ? r.doc : (q.docs[0] && q.docs[0].fp), page:+r.page || 1, startedAt:r.startedAt || new Date().toISOString(), dur:+r.dur || 0, mime:String(r.mime || "audio/webm"), mode:r.mode === "keep" ? "keep" : "trace" }));
   for (const sp of q.spaces) fitSheetToContent(q, sp);
+  if (cleanPath(p.folder)) q.folder = cleanPath(p.folder); if (isFinite(p.trashed) && +p.trashed > 0) q.trashed = +p.trashed;
   const ui = p.ui || {}; q.ui = { space:sids.has(ui.space) ? ui.space : s0, viewers:(ui.viewers || []).filter(f => fps.has(f)), split:!!ui.split && q.docs.length > 0 };
   return q;
 }
@@ -2653,6 +2656,7 @@ async function openProject(data, opts = {}){
   closePlayer(); closePop(); hideBanner(); toggleSearch(false); textCache.clear(); if (WF.open) closeWsFind(); closeExam();
   const proj = cleanProject(data);
   if (!proj.docs.length){ toast("Projede belge yok."); return; }
+  if (!opts.sample) markOpened(proj.id);
   S.proj = proj; S.sample = !!opts.sample; S.space = proj.ui.space; S.sel = null; S.selLink = null; cancelLink();
   el.docTitle.textContent = proj.name; el.docTitle.title = S.sample ? "" : "Adı değiştirmek için tıkla"; document.title = proj.name + " · " + APP_NAME;
   setView("editor"); setTab("pdf");
@@ -2682,7 +2686,7 @@ async function openPdfFile(file, mode){
     const all = await DB.all("projects").catch(() => []);
     const hit = all.sort((a, b) => b.updated - a.updated).find(r => (r.data.docs || []).some(d => d.fp === fp));
     if (hit){ await openProject(hit.data); const v = S.viewers[0]; if (v.fp !== fp) await showDoc(v, fp); toast(`"${hit.name}" projesinde açıldı`); return; }
-    const p = emptyProject(stripPdf(file.name)); p.docs = [{ fp, name:file.name }]; p.ui = { space:p.spaces[0].id, viewers:[fp], split:false };
+    const p = emptyProject(stripPdf(file.name)); p.docs = [{ fp, name:file.name }]; p.ui = { space:p.spaces[0].id, viewers:[fp], split:false }; if (LIB.view === "proj" && LIB.path) p.folder = LIB.path;
     await openProject(p);
   } catch (e){ console.error(e); toast("Bu PDF açılamadı. Dosya bozuk ya da şifreli olabilir.", null, 5000); }
 }
@@ -2700,7 +2704,7 @@ async function openPdfFiles(files, mode){
     renderTabs(); await showDoc(AV(), docs[0].fp); commit(); toast(`${added} belge projeye eklendi`); return;
   }
   const p = emptyProject(stripPdf(docs[0].name) + (docs.length > 1 ? ` ve ${docs.length - 1} belge daha` : ""));
-  p.docs = docs; p.ui = { space:p.spaces[0].id, viewers:docs.slice(0, 2).map(d => d.fp), split:docs.length > 1 && !isNarrow() };
+  p.docs = docs; p.ui = { space:p.spaces[0].id, viewers:docs.slice(0, 2).map(d => d.fp), split:docs.length > 1 && !isNarrow() }; if (LIB.view === "proj" && LIB.path) p.folder = LIB.path;
   await openProject(p); toast(`${docs.length} belge tek projede açıldı. Alıntıların hepsi aynı masada buluşur.`, null, 5000);
 }
 
@@ -2712,27 +2716,196 @@ async function migrateOld(){
     for (const d of old){ const p = migrateV3(d.data || {}, d.fp, d.name); p.name = stripPdf(d.name); await DB.put("projects", { id:p.id, name:p.name, updated:d.updated || Date.now(), data:p }); }
   } catch (e){ console.warn("migration", e); }
 }
-async function renderHome(){
-  let projs = []; try { projs = (await DB.all("projects")).sort((a, b) => b.updated - a.updated); } catch {}
-  el.recent.innerHTML = ""; el.recentEmpty.hidden = projs.length > 0;
-  for (const r of projs){
-    const d = r.data || {}; const li = document.createElement("li"); li.className = "rc";
-    const main = document.createElement("button"); main.className = "rc-main";
-    const nm = document.createElement("span"); nm.className = "rc-name"; nm.textContent = r.name;
-    const it = d.items || [], ex = it.filter(i => i.type !== "note").length, nt = it.filter(i => i.type === "note").length, nd = (d.docs || []).length, rc = (d.recs || []).length;
-    const parts = [fmtDate(r.updated)]; if (nd > 1) parts.push(nd + " belge"); if (ex) parts.push(ex + " alıntı"); if (nt) parts.push(nt + " not"); if (rc) parts.push(rc + " kayıt");
-    const mt = document.createElement("span"); mt.className = "rc-meta"; mt.textContent = parts.join(" · ");
-    main.append(nm, mt); main.onclick = () => openProject(d);
-    const acts = document.createElement("div"); acts.className = "rc-acts";
-    const ex2 = document.createElement("button"); ex2.className = "icon-btn sm"; ex2.title = "Dışa aktar (.ednote)"; ex2.setAttribute("aria-label", ex2.title); ex2.innerHTML = ICON.download; ex2.onclick = () => exportZip(r.id);
-    const del = document.createElement("button"); del.className = "icon-btn sm"; del.title = "Bu cihazdan sil"; del.setAttribute("aria-label", del.title); del.innerHTML = ICON.del;
-    del.onclick = async () => {
-      if (!del.dataset.arm){ del.dataset.arm = "1"; del.style.color = "var(--rec)"; toast(OD.enabled() && OD._st.auth ? "Silmek için tekrar dokun. Proje bu cihazdan ve OneDrive'dan kaldırılır." : "Silmek için tekrar dokun. Proje ve notları bu cihazdan kaldırılır."); setTimeout(() => { delete del.dataset.arm; del.style.color = ""; }, 4000); return; }
-      await deleteLocalProject(r.id); await OD.forget(r.id); renderHome();
-    };
-    acts.append(ex2, del); li.append(main, acts); el.recent.appendChild(li);
-  }
+/* ================= library (home): folders, recent, trash ================= */
+const LIB = { view:"proj", path:"", q:"", sort:ls.get("ednote:libSort") || "opened", list:ls.get("ednote:libView") === "list", recs:[] };
+const TRASH_DAYS = 30;
+const cleanPath = p => String(p || "").split("/").map(x => x.replace(/[\\:*?"<>|]+/g, "").trim().slice(0, 60)).filter(Boolean).slice(0, 6).join("/");
+const parentOf = p => p.includes("/") ? p.slice(0, p.lastIndexOf("/")) : "";
+const baseOf = p => p.slice(p.lastIndexOf("/") + 1);
+const openedMap = () => { try { return JSON.parse(ls.get("ednote:opened") || "{}"); } catch { return {}; } };
+function markOpened(id){ const m = openedMap(); m[id] = Date.now(); ls.set("ednote:opened", JSON.stringify(m)); }
+const savedFolders = () => { try { return JSON.parse(ls.get("ednote:folders") || "[]").map(cleanPath).filter(Boolean); } catch { return []; } };
+const saveFolders = a => ls.set("ednote:folders", JSON.stringify([...new Set(a)]));
+function allFolders(recs){
+  const set = new Set(savedFolders());
+  for (const r of recs){ let f = cleanPath(r.data && r.data.folder); while (f){ set.add(f); f = parentOf(f); } }
+  for (const f of [...set]){ let p = parentOf(f); while (p){ set.add(p); p = parentOf(p); } }
+  return [...set].sort((a, b) => a.localeCompare(b, "tr"));
 }
+const ago = t => { const s = (Date.now() - t) / 1000; return s < 60 ? "az önce" : s < 3600 ? Math.round(s / 60) + " dk önce" : s < 86400 ? Math.round(s / 3600) + " saat önce" : s < 7 * 86400 ? Math.round(s / 86400) + " gün önce" : fmtDate(t); };
+async function updateRec(id, fn){
+  const r = await DB.get("projects", id).catch(() => null); if (!r || !r.data) return;
+  fn(r.data); r.name = r.data.name || r.name; r.updated = Date.now(); await DB.put("projects", r); OD.soon(3000);
+}
+/* first page of the first document as a small picture, made once and kept */
+const thumbQ = []; let thumbBusy = false;
+async function pumpThumbs(){
+  if (thumbBusy) return; thumbBusy = true;
+  while (thumbQ.length){
+    const { fp, img } = thumbQ.shift();
+    try {
+      let t = await DB.get("meta", "thumb:" + fp).catch(() => null);
+      if (!t){
+        const rec = await DB.get("pdfs", fp).catch(() => null); if (!rec) continue;
+        const pdf = await pdfjsLib.getDocument({ data:rec.bytes.slice ? rec.bytes.slice() : new Uint8Array(rec.bytes), isEvalSupported:false }).promise;
+        const page = await pdf.getPage(1), vp1 = page.getViewport({ scale:1 }), vp = page.getViewport({ scale:260 / vp1.width });
+        const c = document.createElement("canvas"); c.width = Math.ceil(vp.width); c.height = Math.ceil(vp.height);
+        const x = c.getContext("2d"); x.fillStyle = "#fff"; x.fillRect(0, 0, c.width, c.height);
+        await page.render({ canvasContext:x, viewport:vp }).promise; pdf.destroy();
+        t = { k:"thumb:" + fp, src:c.toDataURL("image/jpeg", 0.7) }; await DB.put("meta", t);
+      }
+      img.src = t.src; img.closest(".rc").classList.add("has-thumb");
+    } catch (e){ console.warn("thumb", e); }
+  }
+  thumbBusy = false;
+}
+const FOLDER_SVG = '<svg viewBox="0 0 64 48" class="fold-ic" aria-hidden="true"><path d="M4 9a5 5 0 0 1 5-5h14l5 5h27a5 5 0 0 1 5 5v25a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5z" class="f1"/><path d="M4 16a5 5 0 0 1 5-5h46a5 5 0 0 1 5 5v23a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5z" class="f2"/></svg>';
+function libMenu(anchor, items){
+  const m = $("#libMenu"); m.innerHTML = "";
+  for (const it of items){
+    if (it === "-"){ const s = document.createElement("div"); s.className = "menu-sep"; m.appendChild(s); continue; }
+    const b = document.createElement("button"); b.className = "menu-item" + (it.danger ? " danger" : ""); b.textContent = it.label; b.onclick = () => { closePop(); it.fn(); }; m.appendChild(b);
+  }
+  openPop(m, anchor);
+}
+function askText(title, value, ok){
+  const v = prompt(title, value || ""); if (v === null) return; const t = v.trim(); if (t) ok(t);
+}
+function moveMenu(anchor, rec){
+  const folders = allFolders(LIB.recs), cur = cleanPath(rec.data.folder);
+  const items = [{ label:(cur ? "" : "✓ ") + "Projelerim (en üst)", fn:() => moveTo(rec.id, "") }];
+  for (const f of folders) items.push({ label:(f === cur ? "✓ " : "") + "  ".repeat(f.split("/").length - 1) + baseOf(f), fn:() => moveTo(rec.id, f) });
+  items.push("-", { label:"Yeni klasöre taşı…", fn:() => askText("Yeni klasörün adı", "", n => { const f = cleanPath((LIB.path ? LIB.path + "/" : "") + n); saveFolders([...savedFolders(), f]); moveTo(rec.id, f); }) });
+  libMenu(anchor, items);
+}
+async function moveTo(id, folder){ await updateRec(id, d => { if (folder) d.folder = folder; else delete d.folder; }); toast(folder ? `"${baseOf(folder)}" klasörüne taşındı` : "Projelerim'e taşındı"); renderHome(); }
+async function trashProject(id){ await updateRec(id, d => { d.trashed = Date.now(); }); toast("Çöp kutusuna atıldı. 30 gün içinde geri alabilirsin.", { label:"Geri al", fn:() => restoreProject(id) }); renderHome(); }
+async function restoreProject(id){ await updateRec(id, d => { delete d.trashed; }); toast("Geri alındı"); renderHome(); }
+async function purgeProject(id){ await deleteLocalProject(id); await OD.forget(id); const m = openedMap(); delete m[id]; ls.set("ednote:opened", JSON.stringify(m)); }
+async function renameFolder(path){
+  askText("Klasörün yeni adı", baseOf(path), async n => {
+    const np = cleanPath((parentOf(path) ? parentOf(path) + "/" : "") + n); if (!np || np === path) return;
+    const swap = f => f === path ? np : f.startsWith(path + "/") ? np + f.slice(path.length) : f;
+    for (const r of LIB.recs){ const f = cleanPath(r.data.folder); if (f && (f === path || f.startsWith(path + "/"))) await updateRec(r.id, d => { d.folder = swap(f); }); }
+    saveFolders(savedFolders().map(swap)); if (LIB.path === path || LIB.path.startsWith(path + "/")) LIB.path = swap(LIB.path); renderHome();
+  });
+}
+async function deleteFolder(path){
+  const inside = LIB.recs.filter(r => { const f = cleanPath(r.data.folder); return !r.data.trashed && f && (f === path || f.startsWith(path + "/")); });
+  if (inside.length && !confirm(`"${baseOf(path)}" klasöründeki ${inside.length} proje çöp kutusuna atılacak (30 gün içinde geri alınabilir). Devam edilsin mi?`)) return;
+  for (const r of inside) await updateRec(r.id, d => { d.trashed = Date.now(); delete d.folder; });
+  saveFolders(savedFolders().filter(f => f !== path && !f.startsWith(path + "/")));
+  if (LIB.path === path || LIB.path.startsWith(path + "/")) LIB.path = parentOf(path);
+  toast(inside.length ? "Klasör silindi, projeler çöp kutusunda" : "Klasör silindi"); renderHome();
+}
+function projTile(r, opts = {}){
+  const d = r.data || {}, li = document.createElement("li"); li.className = "rc proj"; li.dataset.id = r.id;
+  const main = document.createElement("button"); main.className = "rc-main";
+  const th = document.createElement("span"); th.className = "thumb"; const img = document.createElement("img"); img.alt = ""; th.appendChild(img);
+  const ph = document.createElement("span"); ph.className = "thumb-ph"; ph.innerHTML = '<svg viewBox="0 0 24 24"><path d="M7 3.5h7l4 4V20a.5.5 0 0 1-.5.5h-10A.5.5 0 0 1 7 20z"/><path d="M14 3.5V8h4"/></svg>'; th.appendChild(ph);
+  const nm = document.createElement("span"); nm.className = "rc-name"; nm.textContent = r.name;
+  const it = d.items || [], ex = it.filter(i => i.type !== "note").length, nt = it.filter(i => i.type === "note").length, nd = (d.docs || []).length;
+  const op = openedMap()[r.id];
+  const parts = [d.trashed ? `${Math.max(0, TRASH_DAYS - Math.floor((Date.now() - d.trashed) / 864e5))} gün sonra silinecek` : LIB.sort === "updated" || !op ? ago(r.updated) : ago(op)];
+  if (nd > 1) parts.push(nd + " belge"); if (ex) parts.push(ex + " alıntı"); if (nt) parts.push(nt + " not");
+  if (opts.showPath && d.folder) parts.push(d.folder.replace(/\//g, " › "));
+  const mt = document.createElement("span"); mt.className = "rc-meta"; mt.textContent = parts.join(" · ");
+  main.append(th, nm, mt);
+  main.onclick = () => { if (d.trashed){ toast("Açmak için önce geri al.", { label:"Geri al", fn:() => restoreProject(r.id) }); return; } openProject(d); };
+  const acts = document.createElement("div"); acts.className = "rc-acts";
+  if (d.trashed){
+    const rs = document.createElement("button"); rs.className = "btn sm"; rs.textContent = "Geri al"; rs.onclick = () => restoreProject(r.id);
+    const del = document.createElement("button"); del.className = "icon-btn sm"; del.title = "Kalıcı olarak sil"; del.setAttribute("aria-label", del.title); del.innerHTML = ICON.del;
+    del.onclick = async () => { if (!confirm(`"${r.name}" kalıcı olarak silinsin mi? Bu geri alınamaz.`)) return; await purgeProject(r.id); renderHome(); };
+    acts.append(rs, del);
+  } else {
+    const mb = document.createElement("button"); mb.className = "icon-btn sm rc-more"; mb.title = "Seçenekler"; mb.setAttribute("aria-label", "Seçenekler"); mb.innerHTML = '<svg viewBox="0 0 24 24"><circle cx="6" cy="12" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="18" cy="12" r="1.4"/></svg>';
+    mb.onclick = () => libMenu(mb, [
+      { label:"Aç", fn:() => openProject(d) },
+      { label:"Yeniden adlandır", fn:() => askText("Projenin yeni adı", r.name, async n => { await updateRec(r.id, x => { x.name = n; }); renderHome(); }) },
+      { label:"Taşı…", fn:() => moveMenu(mb, r) },
+      { label:"Dışa aktar (.ednote)", fn:() => exportZip(r.id) },
+      "-",
+      { label:"Çöp kutusuna at", danger:true, fn:() => trashProject(r.id) }
+    ]);
+    acts.appendChild(mb);
+    li.draggable = !matchMedia("(pointer:coarse)").matches;
+    li.addEventListener("dragstart", e => { e.dataTransfer.setData("text/ednote-project", r.id); e.dataTransfer.effectAllowed = "move"; li.classList.add("dragging"); });
+    li.addEventListener("dragend", () => li.classList.remove("dragging"));
+  }
+  li.append(main, acts);
+  const fp = d.docs && d.docs[0] && d.docs[0].fp; if (fp){ thumbQ.push({ fp, img }); }
+  return li;
+}
+function dropTarget(node, folder){
+  node.addEventListener("dragover", e => { if ([...e.dataTransfer.types].includes("text/ednote-project")){ e.preventDefault(); node.classList.add("drop"); } });
+  node.addEventListener("dragleave", () => node.classList.remove("drop"));
+  node.addEventListener("drop", e => { node.classList.remove("drop"); const id = e.dataTransfer.getData("text/ednote-project"); if (id){ e.preventDefault(); moveTo(id, folder); } });
+}
+function folderTile(path, count){
+  const li = document.createElement("li"); li.className = "rc fold"; li.dataset.folder = path;
+  const main = document.createElement("button"); main.className = "rc-main";
+  const th = document.createElement("span"); th.className = "thumb fold-th"; th.innerHTML = FOLDER_SVG;
+  const nm = document.createElement("span"); nm.className = "rc-name"; nm.textContent = baseOf(path);
+  const mt = document.createElement("span"); mt.className = "rc-meta"; mt.textContent = count ? count + " proje" : "Boş";
+  main.append(th, nm, mt); main.onclick = () => { LIB.path = path; LIB.q = ""; $("#libQ").value = ""; renderHome(); };
+  const acts = document.createElement("div"); acts.className = "rc-acts";
+  const mb = document.createElement("button"); mb.className = "icon-btn sm rc-more"; mb.title = "Seçenekler"; mb.setAttribute("aria-label", "Seçenekler"); mb.innerHTML = '<svg viewBox="0 0 24 24"><circle cx="6" cy="12" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="18" cy="12" r="1.4"/></svg>';
+  mb.onclick = () => libMenu(mb, [{ label:"Aç", fn:() => main.click() }, { label:"Yeniden adlandır", fn:() => renameFolder(path) }, "-", { label:"Klasörü sil", danger:true, fn:() => deleteFolder(path) }]);
+  acts.appendChild(mb); li.append(main, acts); dropTarget(li, path);
+  return li;
+}
+async function renderHome(){
+  let recs = []; try { recs = await DB.all("projects"); } catch {}
+  /* empty the bin: projects trashed more than 30 days ago */
+  for (const r of recs) if (r.data && r.data.trashed && Date.now() - r.data.trashed > TRASH_DAYS * 864e5) await purgeProject(r.id);
+  recs = recs.filter(r => r.data && !(r.data.trashed && Date.now() - r.data.trashed > TRASH_DAYS * 864e5));
+  LIB.recs = recs; thumbQ.length = 0;
+  const live = recs.filter(r => !r.data.trashed), trash = recs.filter(r => r.data.trashed), op = openedMap();
+  $("#trashCount").textContent = trash.length || "";
+  document.querySelectorAll(".lib-nav button").forEach(b => b.toggleAttribute("aria-current", b.dataset.v === LIB.view));
+  const folders = allFolders(recs); if (LIB.path && !folders.includes(LIB.path)) LIB.path = "";
+  const q = LIB.q.trim().toLocaleLowerCase("tr").replace(/ı/g, "i");
+  const byName = (a, b) => a.name.localeCompare(b.name, "tr"), byTime = (a, b) => LIB.sort === "updated" ? b.updated - a.updated : (op[b.id] || b.updated) - (op[a.id] || a.updated);
+  const sortP = a => a.sort(LIB.sort === "name" ? byName : byTime);
+  /* top bar */
+  const crumb = $("#libCrumb"); crumb.innerHTML = "";
+  const addCrumb = (label, path, last) => { const b = document.createElement(last ? "span" : "button"); b.className = "crumb" + (last ? " cur" : ""); b.textContent = label; if (!last){ b.onclick = () => { LIB.path = path; renderHome(); }; dropTarget(b, path); } crumb.appendChild(b); if (!last){ const s = document.createElement("span"); s.className = "crumb-sep"; s.textContent = "›"; crumb.appendChild(s); } };
+  if (LIB.view === "proj"){
+    const segs = LIB.path ? LIB.path.split("/") : [];
+    addCrumb("Projelerim", "", !segs.length); segs.forEach((sg, i) => addCrumb(sg, segs.slice(0, i + 1).join("/"), i === segs.length - 1));
+  } else addCrumb(LIB.view === "recent" ? "Son açılanlar" : "Çöp kutusu", "", true);
+  $("#libUp").hidden = !(LIB.view === "proj" && LIB.path && !q);
+  $("#libNewFolder").hidden = LIB.view !== "proj"; $("#libEmptyTrash").hidden = !(LIB.view === "trash" && trash.length);
+  $("#libSort").value = LIB.sort; $("#libSort").hidden = LIB.view === "trash";
+  el.recent.classList.toggle("list", LIB.list);
+  const note = $("#libNote"); note.hidden = true;
+  /* items */
+  el.recent.innerHTML = ""; let count = 0;
+  const add = n => { el.recent.appendChild(n); count++; };
+  if (LIB.view === "trash"){
+    note.hidden = !trash.length; note.textContent = `Çöp kutusundaki projeler ${TRASH_DAYS} gün sonra kendiliğinden silinir.`;
+    for (const r of trash.sort((a, b) => b.data.trashed - a.data.trashed)) add(projTile(r));
+  } else if (q){
+    for (const f of folders.filter(f => f.toLocaleLowerCase("tr").replace(/ı/g, "i").includes(q))) add(folderTile(f, live.filter(r => cleanPath(r.data.folder) === f).length));
+    for (const r of sortP(live.filter(r => r.name.toLocaleLowerCase("tr").replace(/ı/g, "i").includes(q) || (r.data.docs || []).some(d => (d.name || "").toLocaleLowerCase("tr").replace(/ı/g, "i").includes(q))))) add(projTile(r, { showPath:true }));
+  } else if (LIB.view === "recent"){
+    for (const r of live.filter(r => op[r.id]).sort((a, b) => op[b.id] - op[a.id]).slice(0, 24)) add(projTile(r, { showPath:true }));
+  } else {
+    for (const f of folders.filter(f => parentOf(f) === LIB.path)) add(folderTile(f, live.filter(r => { const x = cleanPath(r.data.folder); return x === f || x.startsWith(f + "/"); }).length));
+    for (const r of sortP(live.filter(r => cleanPath(r.data.folder) === LIB.path))) add(projTile(r));
+  }
+  const empty = $("#recentEmpty"); empty.hidden = count > 0;
+  if (!count) empty.innerHTML = q ? "Aramayla eşleşen proje yok." : LIB.view === "trash" ? "Çöp kutusu boş." : LIB.view === "recent" ? "Henüz açılmış proje yok." : LIB.path ? "Bu klasör boş. Projeleri buraya ⋯ menüsündeki <b>Taşı</b> ile ya da sürükleyerek getirebilirsin." : "Henüz bir proje yok. <b>PDF aç</b> ile başla; birden fazla PDF seçersen hepsi aynı projeye girer.";
+  pumpThumbs();
+}
+document.querySelectorAll(".lib-nav button").forEach(b => b.onclick = () => { LIB.view = b.dataset.v; LIB.q = ""; $("#libQ").value = ""; renderHome(); });
+$("#libUp").onclick = () => { LIB.path = parentOf(LIB.path); renderHome(); };
+$("#libQ").addEventListener("input", e => { LIB.q = e.target.value; if (LIB.view === "trash") LIB.view = "proj"; renderHome(); });
+$("#libSort").onchange = e => { LIB.sort = e.target.value; ls.set("ednote:libSort", LIB.sort); renderHome(); };
+$("#libView").onclick = () => { LIB.list = !LIB.list; ls.set("ednote:libView", LIB.list ? "list" : "grid"); renderHome(); };
+$("#libNewFolder").onclick = () => askText("Yeni klasörün adı", "", n => { const f = cleanPath((LIB.path ? LIB.path + "/" : "") + n); if (!f) return; saveFolders([...savedFolders(), f]); renderHome(); });
+$("#libEmptyTrash").onclick = async () => { const t = LIB.recs.filter(r => r.data.trashed); if (!t.length || !confirm(`Çöp kutusundaki ${t.length} proje kalıcı olarak silinsin mi? Bu geri alınamaz.`)) return; for (const r of t) await purgeProject(r.id); renderHome(); };
 $("#hOpen").onclick = () => { $("#filePdf").dataset.mode = "new"; $("#filePdf").click(); };
 $("#hImport").onclick = () => $("#fileZip").click();
 $("#hFolder").hidden = !FS.supported; $("#hFolder").onclick = openFolderProject;
@@ -2787,7 +2960,7 @@ const wfActive = () => WF.open && !!(WF.q || WF.tags.size);
 function wfMatch(i){
   if (WF.tags.size && !(i.tags && [...WF.tags].every(t => i.tags.includes(t)))) return false;
   if (!WF.q) return true;
-  const hay = ((i.text || "") + " " + (i.note || "") + " " + (i.tags || []).map(t => "#" + t).join(" ") + (i.photo ? " fotoğraf" : "")).toLocaleLowerCase("tr");
+  const hay = ((i.text || "") + " " + (i.note || "") + " " + (i.tags || []).map(t => "#" + t).join(" ") + (i.photo ? " fotoğraf" : "")).toLocaleLowerCase("tr").replace(/ı/g, "i");
   return WF.q.split(/\s+/).every(w => hay.includes(w));
 }
 function openWsFind(o = {}){
@@ -2801,7 +2974,7 @@ function openWsFind(o = {}){
 function closeWsFind(){ WF.open = false; WF.tags.clear(); WF.hits = []; WF.idx = -1; $("#wsQ").value = ""; $("#wsFind").hidden = true; el.ws.classList.remove("finding"); applyWsFilter(); }
 function runWsFind(keep){
   if (!S.proj) return;
-  WF.q = $("#wsQ").value.trim().toLocaleLowerCase("tr");
+  WF.q = $("#wsQ").value.trim().toLocaleLowerCase("tr").replace(/ı/g, "i");
   for (const t of [...WF.tags]) if (!S.proj.items.some(i => i.tags && i.tags.includes(t))) WF.tags.delete(t);
   const order = new Map(S.proj.spaces.map((s, k) => [s.id, k])), prev = WF.hits[WF.idx];
   WF.hits = wfActive() ? S.proj.items.filter(wfMatch).sort((a, b) => (order.get(a.space) - order.get(b.space)) || (a.y - b.y) || (a.x - b.x)).map(i => i.id) : [];
@@ -3410,7 +3583,9 @@ const OD = (() => {
     btn.textContent = "Şimdi eşitle"; btn.disabled = st.busy; btn.onclick = () => sync(true);
     if (S.proj && !S.sample && document.body.dataset.view === "editor" && !st.busy && st.last && !st.err && el.saveState.textContent.startsWith("Kaydedildi")) setSaveState("Kaydedildi · OneDrive");
   }
+  let booted = false;
   async function boot(){
+    if (booted) return null; booted = true; /* runs once: at start, or right after the licence is entered */
     if (!enabled()){ ui(); return null; }
     try { const a = await DB.get("meta", "od:auth"); if (a && a.access) { const { k, ...rest } = a; st.auth = rest; } } catch {}
     st.last = +ls.get("od:last") || 0;
@@ -3430,7 +3605,7 @@ const OD = (() => {
 
 /* ================= licence: a personal code, checked against Ekrem's list about once a day; 7 days of grace offline ================= */
 const LIC = (() => {
-  const CFG = window.ED_CONFIG || {}, LIST = String(CFG.licenseListUrl || ""), ON = !!LIST;
+  const CFG = window.ED_CONFIG || {}, LIST = String(CFG.licenseListUrl || ""), API = String(CFG.licenseApiUrl || "").replace(/\/+$/, ""), ON = !!(LIST || API);
   const KEY = "ednote:lic", DAY = 864e5, GRACE = 7 * DAY;
   const ALPH = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
   const norm = c => String(c || "").toUpperCase().replace(/O/g, "0").replace(/[IL]/g, "1").replace(/U/g, "V").replace(/[^0-9A-Z]/g, "").replace(/^EDN/, "");
@@ -3438,6 +3613,38 @@ const LIC = (() => {
   async function hashOf(c){ const b = await crypto.subtle.digest("SHA-256", new TextEncoder().encode("ednote-v1:" + norm(c))); return [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, "0")).join(""); }
   const load = () => { try { return JSON.parse(ls.get(KEY) || "null"); } catch { return null; } };
   const store = st => ls.set(KEY, JSON.stringify(st));
+  /* v6.9.1: with licenseApiUrl each code is bound to one Microsoft account (Cloudflare server). The same account works on any number of devices. */
+  const CID = String(CFG.onedriveClientId || "").trim(), MS = "https://login.microsoftonline.com/common/oauth2/v2.0", MS_SCOPE = "openid profile email";
+  const redirectUri = () => location.origin + location.pathname.replace(/index\.html$/, "");
+  const b64u = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  const devName = () => { const u = navigator.userAgent; const a = u.match(/Android[^;)]*;\s*([^;)]+?)(?:\s+Build|\))/); return (a ? a[1] : /iPad/.test(u) ? "iPad" : /iPhone/.test(u) ? "iPhone" : /Windows/.test(u) ? "Windows" : /Mac/.test(u) ? "Mac" : /Linux/.test(u) ? "Linux" : "Cihaz") + (NATIVE ? " (uygulama)" : " (tarayıcı)"); };
+  async function post(path, body){
+    const r = await fetch(API + path, { method:"POST", headers:{ "Content-Type":"application/json" }, body:JSON.stringify({ ...body, m:devName() }), cache:"no-store" });
+    if (!r.ok) throw new Error("api " + r.status); return r.json();
+  }
+  async function msLogin(code){
+    const verifier = b64u(crypto.getRandomValues(new Uint8Array(48))), state = b64u(crypto.getRandomValues(new Uint8Array(16)));
+    const challenge = b64u(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier)));
+    ls.set("lic:pkce", JSON.stringify({ verifier, state, code:norm(code), t:Date.now() }));
+    location.assign(MS + "/authorize?" + new URLSearchParams({ client_id:CID, response_type:"code", redirect_uri:redirectUri(), scope:MS_SCOPE, state, code_challenge:challenge, code_challenge_method:"S256", response_mode:"query", prompt:"select_account" }));
+  }
+  /* back from Microsoft: null when the address is not ours (OneDrive handles its own), otherwise "ok", "taken", "bad", "cancel" or "error" */
+  async function handleRedirect(){
+    if (!API) return null;
+    const u = new URL(location.href), c = u.searchParams.get("code"), err = u.searchParams.get("error");
+    let pk = null; try { pk = JSON.parse(ls.get("lic:pkce") || "null"); } catch {}
+    if ((!c && !err) || !pk || u.searchParams.get("state") !== pk.state) return null;
+    ls.set("lic:pkce", ""); history.replaceState(null, "", redirectUri());
+    if (err) return "cancel";
+    try {
+      const r = await fetch(MS + "/token", { method:"POST", headers:{ "Content-Type":"application/x-www-form-urlencoded" }, body:new URLSearchParams({ client_id:CID, scope:MS_SCOPE, grant_type:"authorization_code", code:c, redirect_uri:redirectUri(), code_verifier:pk.verifier }) });
+      const j = await r.json().catch(() => ({})); if (!j.id_token) throw new Error(j.error || "token");
+      const b = await post("/bind", { code:pk.code, idt:j.id_token });
+      if (!b.ok) return b.reason === "taken" ? "taken" : b.reason === "bad" ? "bad" : "error";
+      const now = Date.now(); store({ code:pretty(pk.code), h:await hashOf(pk.code), ok:now, chk:now, ticket:b.ticket, name:b.name || "" }); updates(); return "ok";
+    } catch (e){ console.warn(e); return "error"; }
+  }
+  const updates = () => { if (LIST) list().then(j => offerUpdate(j.latest), () => {}); };
   async function list(){
     const r = await fetch(LIST + (LIST.includes("?") ? "&" : "?") + "t=" + Date.now(), { cache:"no-store" });
     if (!r.ok) throw new Error("list " + r.status);
@@ -3449,20 +3656,36 @@ const LIC = (() => {
     const st = load(); if (!st || !st.h) return "none";
     const now = Date.now();
     if (force || now - (st.chk || 0) > DAY / 2){
-      try { const j = await list(); st.chk = now; if (j.codes.includes(st.h)){ st.ok = now; delete st.rev; } else st.rev = true; store(st); offerUpdate(j.latest); }
-      catch { /* offline: try again later */ }
+      if (API){
+        if (st.ticket){
+          try { const r = await post("/check", { ticket:st.ticket }); st.chk = now; if (r.ok){ st.ok = now; st.name = r.name || ""; delete st.rev; } else if (r.reason === "unbound") delete st.ticket; else st.rev = true; store(st); updates(); }
+          catch { /* offline: try again later */ }
+        }
+      } else {
+        try { const j = await list(); st.chk = now; if (j.codes.includes(st.h)){ st.ok = now; delete st.rev; } else st.rev = true; store(st); offerUpdate(j.latest); }
+        catch { /* offline: try again later */ }
+      }
     }
     if (st.rev) return "revoked";
+    if (API && !st.ticket) return "login";   /* not yet bound to a Microsoft account (codes from before 6.9.1, or Ekrem released the binding) */
     return now - (st.ok || 0) <= GRACE ? "ok" : "stale";
   }
   async function activate(code){
     const n = norm(code); if (n.length < 12 || [...n].some(ch => !ALPH.includes(ch))) return "bad";
+    const h = await hashOf(n), now = Date.now();
+    if (API){
+      let r; try { r = await post("/precheck", { code:n }); } catch { return "offline"; }
+      if (!r.ok) return "bad";
+      if (!CID) return "error";
+      await msLogin(n); return "redirect";
+    }
     let j; try { j = await list(); } catch { return "offline"; }
-    const h = await hashOf(n); if (!j.codes.includes(h)) return "bad";
-    const now = Date.now(); store({ code:pretty(n), h, ok:now, chk:now }); offerUpdate(j.latest); return "ok";
+    if (!j.codes.includes(h)) return "bad";
+    store({ code:pretty(n), h, ok:now, chk:now }); offerUpdate(j.latest); return "ok";
   }
-  const info = () => { const st = load(); return st && st.code ? st.code : ""; };
-  return { ON, state, activate, info, pretty, hashOf, norm };
+  const info = () => { const st = load(); return st && st.code ? (st.name ? "Lisans: " + st.name : st.code) : ""; };
+  const relogin = () => { const st = load(); return st && st.code && CID ? msLogin(st.code) : null; };
+  return { ON, API:!!API, state, activate, info, pretty, hashOf, norm, handleRedirect, relogin, code:() => (load() || {}).code || "" };
 })();
 /* ================= app updates (Android): the same list says which build is the newest and where to get it ================= */
 const BUILD = window.ED_BUILD || null; /* written into the app when GitHub builds the APK */
@@ -3482,13 +3705,16 @@ function showLicGate(kind){
   const T = {
     none:["Lisans kodu", "ED Note'u kullanmak için sana verilen lisans kodunu gir. Kod EDN- ile başlar."],
     revoked:["Lisans geçerli değil", "Bu cihazdaki lisans kodu artık geçerli değil. Yeni bir kod girebilirsin. Notların bu cihazda duruyor; aşağıdan dışa aktarabilirsin."],
-    stale:["İnternete bağlan", "Lisans 7 günden uzun süredir doğrulanamadı. İnternete bağlanıp Tekrar dene'ye bas. Notların bu cihazda güvende."]
+    stale:["İnternete bağlan", "Lisans 7 günden uzun süredir doğrulanamadı. İnternete bağlanıp Tekrar dene'ye bas. Notların bu cihazda güvende."],
+    login:["Microsoft hesabınla doğrula", "Lisansın artık bir Microsoft hesabına bağlanıyor (okul hesabın da olur). Bir kere giriş yapman yeterli; sonra aynı hesapla istediğin kadar cihazda kullanırsın. Notların bu cihazda duruyor."]
   }[kind] || ["Lisans kodu", ""];
+  if (kind === "none" && LIC.API) T[1] += " Sonra Microsoft hesabınla bir kere giriş yapacaksın; kod o hesaba bağlanır.";
   $("#licTitle").textContent = T[0]; $("#licText").textContent = T[1]; $("#licMsg").textContent = "";
+  $("#licCode").hidden = kind === "login"; $("#licGo").textContent = kind === "login" ? "Microsoft ile giriş yap" : "Etkinleştir"; $("#licGate").dataset.kind = kind;
   $("#licRetry").hidden = kind !== "stale"; $("#licExport").hidden = kind === "none";
   g.hidden = false; if (kind !== "stale" && !matchMedia("(pointer:coarse)").matches) $("#licCode").focus();
 }
-function hideLicGate(){ $("#licGate").hidden = true; licShown = false; document.body.classList.remove("lic-locked"); $("#appVer").textContent = "ED Note " + APP_VERSION + (LIC.info() ? " · " + LIC.info() : ""); }
+function hideLicGate(){ $("#licGate").hidden = true; licShown = false; document.body.classList.remove("lic-locked"); OD.boot().catch(() => {}); $("#appVer").textContent = "ED Note " + APP_VERSION + (LIC.info() ? " · " + LIC.info() : ""); }
 async function licCheck(force){
   if (!LIC.ON) return true;
   const st = await LIC.state(force);
@@ -3497,11 +3723,14 @@ async function licCheck(force){
   if (document.body.dataset.view === "editor"){ S.proj = null; setView("home"); }
   showLicGate(st); return false;
 }
+const licMsgFor = r => ({ offline:"İnternet bağlantısı yok. Etkinleştirmek için internet gerekiyor.", taken:"Bu kod başka bir Microsoft hesabına bağlı. Kendi kodunu kullan ya da Ekrem'e yaz.", cancel:"Microsoft girişi iptal edildi. Tekrar deneyebilirsin.", error:"Microsoft girişi doğrulanamadı. Biraz sonra tekrar dene." })[r] || "Bu kod geçerli değil. Harfleri kontrol et ya da Ekrem'den yeni kod iste.";
 $("#licGo").onclick = async () => {
   const b = $("#licGo"); b.disabled = true; $("#licMsg").textContent = "Kontrol ediliyor…";
+  if ($("#licGate").dataset.kind === "login"){ $("#licMsg").textContent = "Microsoft'a yönlendiriliyorsun…"; await LIC.relogin(); return; }
   const r = await LIC.activate($("#licCode").value); b.disabled = false;
+  if (r === "redirect"){ $("#licMsg").textContent = "Microsoft'a yönlendiriliyorsun…"; return; }
   if (r === "ok"){ hideLicGate(); toast("Lisans etkinleştirildi. Hoş geldin!"); return; }
-  $("#licMsg").textContent = r === "offline" ? "İnternet bağlantısı yok. İlk etkinleştirme için internet gerekiyor." : "Bu kod geçerli değil. Harfleri kontrol et ya da Ekrem'den yeni kod iste.";
+  $("#licMsg").textContent = licMsgFor(r);
 };
 $("#licCode").addEventListener("keydown", e => { if (e.key === "Enter") $("#licGo").click(); });
 $("#licCode").addEventListener("input", e => { const t = e.target, n = LIC.norm(t.value); if (n.length >= 4 && !/[^0-9A-Z-]/.test(t.value.toUpperCase())) t.value = LIC.pretty(n); });
@@ -3518,16 +3747,42 @@ if (NATIVE){
   });
 }
 
-/* ================= splitter ================= */
+/* ================= splitter: drag to set the widths; drag all the way to an edge to hide the workspace or the document ================= */
 (function(){
-  const main = $("#main"), split = $("#split");
-  const saved = parseFloat(ls.get("alinti:split")); if (saved > 20 && saved < 85) main.style.setProperty("--left", saved + "%");
+  const main = $("#main"), split = $("#split"), SNAP = 70, MIN_WS = 170;
+  const saved = parseFloat(ls.get("alinti:split")); if (saved >= 12 && saved <= 95) main.style.setProperty("--left", saved + "%");
+  let collapse = ls.get("ednote:collapse") || "";
+  const apply = () => {
+    const c = isNarrow() ? "" : collapse;
+    if (c) main.dataset.collapse = c; else delete main.dataset.collapse;
+    split.title = c === "ws" ? "Masayı aç" : c === "pdf" ? "Belgeyi aç" : "Genişliği ayarla (kenara kadar sürükleyince o taraf kapanır)";
+    requestAnimationFrame(() => { S.viewers.forEach(v => v.fp && !v.root.hidden && fitWidth(v)); if (S.proj){ applyView(); drawLinks(); } scheduleX(); });
+  };
+  const setCollapse = c => { collapse = c; ls.set("ednote:collapse", c); apply(); };
+  narrowMQ.addEventListener ? narrowMQ.addEventListener("change", apply) : narrowMQ.addListener(apply);
+  apply();
   split.addEventListener("pointerdown", e => {
     split.setPointerCapture(e.pointerId);
-    const pct = ev => { const r = main.getBoundingClientRect(); return clamp((ev.clientX - r.left) / r.width * 100, 25, 82); };
-    const move = ev => { main.style.setProperty("--left", pct(ev) + "%"); scheduleX(); };
-    const up = ev => { split.removeEventListener("pointermove", move); split.removeEventListener("pointerup", up); ls.set("alinti:split", String(pct(ev))); S.viewers.forEach(v => v.fp && !v.root.hidden && fitWidth(v)); drawLinks(); };
-    split.addEventListener("pointermove", move); split.addEventListener("pointerup", up);
+    const x0 = e.clientX, was = collapse; let moved = false, snap = "";
+    const r = () => main.getBoundingClientRect();
+    const move = ev => {
+      if (!moved && Math.abs(ev.clientX - x0) < 4) return; moved = true;
+      const b = r(), x = ev.clientX - b.left;
+      snap = x > b.width - SNAP ? "ws" : x < SNAP ? "pdf" : "";
+      if (snap){ if (collapse !== snap){ collapse = snap; apply(); } return; }
+      if (collapse){ collapse = ""; apply(); }
+      const maxPct = (b.width - MIN_WS - 14) / b.width * 100;
+      main.style.setProperty("--left", clamp(x / b.width * 100, 15, maxPct) + "%"); scheduleX();
+    };
+    const up = () => {
+      split.removeEventListener("pointermove", move); split.removeEventListener("pointerup", up); split.removeEventListener("pointercancel", up);
+      if (!moved){ if (was) setCollapse(""); return; } /* a tap on the bar re-opens a hidden side */
+      if (snap){ const sv = parseFloat(ls.get("alinti:split")); main.style.setProperty("--left", (sv >= 12 && sv <= 95 ? sv : 54) + "%"); } /* re-opening goes back to the last width */
+      setCollapse(snap);
+      if (!snap) ls.set("alinti:split", String(parseFloat(main.style.getPropertyValue("--left")) || 54));
+      if (snap) toast(snap === "ws" ? "Masa gizlendi. Açmak için kenardaki çubuğa dokun." : "Belge gizlendi. Açmak için kenardaki çubuğa dokun.");
+    };
+    split.addEventListener("pointermove", move); split.addEventListener("pointerup", up); split.addEventListener("pointercancel", up);
   });
 })();
 
@@ -3606,7 +3861,10 @@ async function boot(){
   S.recMode = ls.get("alinti:recMode") === "keep" ? "keep" : "trace"; renderRecModeIcon();
   await migrateOld();
   setView("home"); $("#appVer").textContent = "ED Note " + APP_VERSION;
+  const licBack = LIC.ON ? await LIC.handleRedirect() : null;
   const licOk = await licCheck(false);
+  if (licBack === "ok" && licOk) toast("Lisans hesabına bağlandı. Hoş geldin!");
+  else if (licBack && licBack !== "ok" && !licOk) $("#licMsg").textContent = licMsgFor(licBack);
   setInterval(() => licCheck(false), 6 * 3600e3);
   document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") licCheck(false); });
   (licOk ? OD.boot() : Promise.resolve(null)).then(async back => { if (back && back.back){ const r = await DB.get("projects", back.back).catch(() => null); if (r && r.data && document.body.dataset.view === "home") openProject(r.data); } }).catch(e => console.warn(e));

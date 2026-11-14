@@ -26,34 +26,45 @@ if (!/^https?:$/.test(location.protocol)) document.addEventListener("DOMContentL
 </script>
 
 <!-- ============ HOME ============ -->
-<div id="home" class="home">
-  <div class="home-inner">
-    <header class="home-head">
-      <svg class="logo-mark" viewBox="22 50 624 546" role="img" aria-label="ED Note logosu"><path fill="currentColor" fill-rule="evenodd" d="M166 50 L640 64 C602 78 542 116 522 156 C517 166 516 172 516 178 L352 180 L348 236 L500 238 C596 240 646 304 646 386 L646 424 C646 520 592 576 498 580 L124 584 C164 548 180 500 184 440 L188 392 C182 368 150 360 112 366 C78 372 46 384 22 397 C70 330 146 264 204 262 L206 140 C206 104 192 72 166 50 Z M352 380 L512 380 L514 346 C556 350 582 378 583 412 L584 452 C582 498 550 524 500 532 C512 512 522 496 522 480 L514 470 L352 470 Z"/></svg>
-      <h1>ED Note</h1>
-      <p class="tagline">Oku. Alıntıla. Düşün.</p>
-    </header>
-    <div class="home-actions">
-      <button class="btn primary lg" id="hOpen">PDF aç</button>
-      <button class="btn lg" id="hImport">Projeyi içe aktar</button>
-      <button class="btn lg" id="hFolder" hidden>Klasörden aç</button>
+<div id="home" class="home lib">
+  <aside class="lib-side">
+    <div class="lib-brand"><svg class="logo-mark" viewBox="22 50 624 546" role="img" aria-label="ED Note logosu"><path fill="currentColor" fill-rule="evenodd" d="M166 50 L640 64 C602 78 542 116 522 156 C517 166 516 172 516 178 L352 180 L348 236 L500 238 C596 240 646 304 646 386 L646 424 C646 520 592 576 498 580 L124 584 C164 548 180 500 184 440 L188 392 C182 368 150 360 112 366 C78 372 46 384 22 397 C70 330 146 264 204 262 L206 140 C206 104 192 72 166 50 Z M352 380 L512 380 L514 346 C556 350 582 378 583 412 L584 452 C582 498 550 524 500 532 C512 512 522 496 522 480 L514 470 L352 470 Z"/></svg><div><h1>ED Note</h1><p class="tagline">Oku. Alıntıla. Düşün.</p></div></div>
+    <nav class="lib-nav" aria-label="Kitaplık">
+      <button data-v="proj" aria-current="page"><svg viewBox="0 0 24 24"><path d="M4 7.5A2.5 2.5 0 0 1 6.5 5h3.2l2 2.2h5.8A2.5 2.5 0 0 1 20 9.7v7.8a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 17.5z"/></svg>Projelerim</button>
+      <button data-v="recent"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 7.5V12l3 2"/></svg>Son açılanlar</button>
+      <button data-v="trash"><svg viewBox="0 0 24 24"><path d="M5 7h14M10 11v6M14 11v6M7 7l1 12a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2l1-12M9.5 7V4.5h5V7"/></svg>Çöp kutusu<span class="lib-count" id="trashCount"></span></button>
+    </nav>
+    <div class="lib-add">
+      <button class="btn primary" id="hOpen"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>PDF aç</button>
+      <button class="btn" id="hImport">Projeyi içe aktar</button>
+      <button class="btn" id="hFolder" hidden>Bilgisayardaki klasörden aç</button>
     </div>
-    <p class="home-hint">Birden fazla PDF seçersen hepsi aynı projeye girer; alıntıları tek masada birleştirir, birbirine bağlarsın.</p>
     <div class="od-row" id="odRow" hidden>
       <svg class="od-ic" viewBox="0 0 24 24"><path d="M7 18.5h10.5a4 4 0 0 0 .6-7.95A5.5 5.5 0 0 0 7.6 9.1 4.75 4.75 0 0 0 7 18.5z"/></svg>
       <div class="od-txt"><b>OneDrive</b><span id="odText"></span></div>
       <button class="btn sm" id="odBtn"></button>
       <button class="icon-btn sm" id="odOff" hidden title="OneDrive bağlantısını kes" aria-label="OneDrive bağlantısını kes"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
     </div>
-    <section class="recent">
-      <h2>Projeler</h2>
-      <ul id="recent" class="recent-list"></ul>
-      <p id="recentEmpty" class="quiet">Henüz bir proje yok. Bir PDF açtığında burada görünür ve bu cihazda otomatik olarak saklanır.</p>
-    </section>
-    <button class="link" id="hSample">Örnek belgeyle dene</button>
-    <p class="app-ver" id="appVer"></p>
-  </div>
+    <div class="lib-foot"><button class="link" id="hSample">Örnek belgeyle dene</button><p class="app-ver" id="appVer"></p></div>
+  </aside>
+  <main class="lib-main">
+    <div class="lib-top">
+      <button class="icon-btn" id="libUp" hidden title="Üst klasöre dön" aria-label="Üst klasöre dön"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button>
+      <nav class="lib-crumb" id="libCrumb" aria-label="Konum"></nav>
+      <span class="spacer"></span>
+      <div class="lib-search"><svg viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6"/><path d="M15 15l5 5"/></svg><input id="libQ" type="search" placeholder="Projelerde ara" aria-label="Projelerde ara"></div>
+      <select id="libSort" aria-label="Sırala"><option value="opened">Son açılan</option><option value="updated">Son değişen</option><option value="name">Ada göre</option></select>
+      <button class="icon-btn" id="libView" title="Liste / kutular" aria-label="Görünümü değiştir"><svg viewBox="0 0 24 24"><path d="M5 6h14M5 12h14M5 18h14"/></svg></button>
+      <button class="icon-btn" id="libNewFolder" title="Yeni klasör" aria-label="Yeni klasör"><svg viewBox="0 0 24 24"><path d="M4 7.5A2.5 2.5 0 0 1 6.5 5h3.2l2 2.2h5.8A2.5 2.5 0 0 1 20 9.7v7.8a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 17.5z"/><path d="M12 10.5v6M9 13.5h6"/></svg></button>
+      <button class="btn sm" id="libEmptyTrash" hidden>Çöpü boşalt</button>
+    </div>
+    <p class="lib-note" id="libNote" hidden></p>
+    <ul id="recent" class="lib-grid"></ul>
+    <p id="recentEmpty" class="quiet lib-empty">Henüz bir proje yok. Soldaki <b>PDF aç</b> ile başla; birden fazla PDF seçersen hepsi aynı projeye girer.</p>
+  </main>
 </div>
+
+<div class="pop" id="libMenu" hidden role="menu"></div>
 
 <div class="updbar" id="updBar" hidden role="status"><span id="updMsg"></span><button class="btn sm" id="updLater">Sonra</button><button class="btn sm primary" id="updGo">İndir</button></div>
 <div class="licgate" id="licGate" hidden role="dialog" aria-modal="true" aria-labelledby="licTitle">

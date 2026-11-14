@@ -160,3 +160,30 @@ Kimlik gizli bir şifre değildir, depoda durabilir. Gizli anahtar (client secre
 - Uygulama lisans listesine baktığında daha yeni bir sürüm görürse üstte "Yeni sürüm hazır" şeridi çıkar: **İndir** APK'yı tarayıcıda indirir (eskisinin üstüne kurulur, notlar kalır), **Sonra** bir gün sormaz.
 - Yükleme yaparken GitHub'daki "Commit changes" kutusuna yazdığın ilk satır, güncelleme notu olarak kullanıcılara gösterilir ("Add files via upload" gibi hazır metinler gösterilmez).
 - Arkadaşlara ilk kurulum için kalıcı indirme adresi: https://github.com/MrED-01/ednote-lisans/releases/latest/download/ED-Note.apk
+
+## Sürüm 6.8.4
+
+- Uygulama ilk kez açılıp lisans kodu girildiğinde OneDrive satırı görünmüyordu (sadece yeniden açınca çıkıyordu). Artık kod girilir girilmez görünür.
+
+## Sürüm 6.8.5
+
+- **Bölme çizgisi:** Belge ile masa arasındaki çizgi artık çok daha sağa (masa en az yaklaşık 170 piksel kalacak kadar) ve sola sürüklenebilir. Çizgiyi ekranın sağ kenarına kadar sürükleyince masa gizlenir, belge tüm ekranı kaplar; sol kenara kadar sürükleyince belge gizlenir, masa tüm ekranı kaplar. Kenarda kalan çubuğa dokununca gizlenen taraf son genişliğiyle geri gelir. Seçim uygulama kapanıp açılınca da korunur. Dokunmatik ekranlarda çizgi parmakla tutulacak kadar geniş.
+
+## Sürüm 6.9: kütüphane (giriş ekranı)
+
+- Giriş ekranı artık bir dosya yöneticisi: solda **Projelerim**, **Son açılanlar** ve **Çöp kutusu**; sağda projeler ilk sayfalarının küçük resmiyle kart olarak görünür. Sağ üstten arama, sıralama (son açılan, son değişen, ada göre), liste/kart görünümü ve **yeni klasör**.
+- **Klasörler:** İstediğin kadar iç içe klasör açabilirsin. Bir klasörün içindeyken açtığın ya da içe aktardığın PDF/proje o klasöre girer. Projeyi kartın ⋯ menüsündeki **Taşı** ile ya da sürükleyip klasörün (veya üstteki yol çubuğunun) üstüne bırakarak taşırsın. Klasörü yeniden adlandırabilir, silebilirsin (içindekiler çöp kutusuna gider).
+- **Çöp kutusu:** Silinen projeler 30 gün çöp kutusunda bekler, **Geri al** ile döner; süre dolunca ya da **Çöp kutusunu boşalt** ile kalıcı silinir.
+- OneDrive açıksa klasör yerleşimi ve çöp kutusu öbür cihazlara da geçer.
+- Aramada Türkçe "ı/i" farkı artık sorun çıkarmıyor ("ikinci" yazınca "Ikinci" de bulunur). Bu, belge içi aramayla masa aramasında da geçerli.
+- Telefonda sol panel üstte başlık olarak durur.
+
+## Sürüm 6.9.1: lisans Microsoft hesabına bağlı (Cloudflare)
+
+- Her lisans kodu ilk kullanıldığında bir Microsoft hesabına (kişisel ya da okul hesabı) bağlanır. Aynı hesapla istenen sayıda cihazda çalışır; başka bir hesap aynı kodu kullanamaz ("Bu kod başka bir Microsoft hesabına bağlı").
+- Her yeni cihazda bir kere Microsoft girişi yapılır. Sonraki kontrolleri uygulama kendi başına yapar; internetsiz 7 gün toleransı aynen geçerli.
+- Bunu Cloudflare'da çalışan küçük bir sunucu yapar: `cloudflare/worker.js`. Hangi kodların geçerli olduğu yine `liste.json`'dan okunur; lisans aracıyla kod eklemek ve iptal etmek eskisi gibi.
+- Daha önce kod girmiş kullanıcılar bir kere "Microsoft hesabınla doğrula" ekranını görür.
+- Lisans aracında kimin hangi hesapla bağlı olduğu ve hangi cihazları kullandığı görünür; **Bağı çöz** ile kod yeni bir hesaba bağlanabilir.
+- Uygulamanın altında "Lisans: isim" yazar (isim Microsoft hesabından gelir).
+- `config.js` içindeki `licenseApiUrl` boşsa uygulama eskisi gibi sadece listeye bakar.

@@ -51,6 +51,11 @@ const check = (name, cond, msg) => { if (!cond){ failed++; console.log(`  FAIL $
     /* annotated PDF */
     const pdf = await p.evaluate(async () => { const r = await EDNoteBuildPdf(); return { size:r.bytes.length, ws:r.wsCount, skipped:r.skipped.length }; }).catch(e => ({ error:String(e) }));
     check(file, !pdf.error && pdf.size > 1000 && pdf.skipped === 0, `pdf export: ${JSON.stringify(pdf)}`);
+    /* library: the project shows up on the home screen, in its folder (v6.9+) */
+    await p.click("#bHome"); await p.waitForTimeout(500);
+    const lib = await p.evaluate(() => ({ tiles:[...document.querySelectorAll("#recent .rc")].map(li => (li.classList.contains("fold") ? "D:" : "") + li.querySelector(".rc-name").textContent) }));
+    const top = exp.folder ? "D:" + exp.folder.split("/")[0] : null;
+    check(file, top ? lib.tiles.includes(top) : lib.tiles.some(t => !t.startsWith("D:")), `home tiles: ${JSON.stringify(lib.tiles)}`);
     check(file, errs.length === 0, "page errors: " + errs.join(" | "));
     await ctx.close();
   }
