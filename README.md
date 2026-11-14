@@ -100,9 +100,14 @@ Her yeni sürümden önce bu test çalıştırılır. Yeni bir sürüm yayınlan
 2. **App registrations > New registration**.
    - Name: `ED Note`
    - Supported account types: **Accounts in any organizational directory and personal Microsoft accounts**
-   - Redirect URI: platform olarak **Single-page application (SPA)** seç, adres: `https://mred-01.github.io/ed-note/` (sondaki eğik çizgi dahil, sitenin tam adresi)
+   - Redirect URI: platform olarak **Single-page application (SPA)** seç, adres: `https://mred-01.github.io/ED-Note/` (sondaki eğik çizgi dahil, sitenin tam adresi)
 3. **Register**'a bas. Açılan sayfadaki **Application (client) ID** değerini kopyala.
 4. **API permissions** bölümünde `Microsoft Graph > Delegated > Files.ReadWrite.AppFolder` iznini ekle (`User.Read` zaten vardır).
 5. Depodaki `config.js` dosyasında `onedriveClientId: ""` satırının tırnakları arasına bu kimliği yapıştır ve kaydet.
 
 Kimlik gizli bir şifre değildir, depoda durabilir. Gizli anahtar (client secret) oluşturmaya gerek yok, oluşturma.
+
+## Sürüm 6.6
+
+- **Laptopta kamera:** Kamera düğmesi bilgisayarda doğrudan kamerayı açar; deklanşöre (ya da Boşluk tuşuna) basınca fotoğraf masaya gelir. "Dosyadan seç" ile kayıtlı bir fotoğraf da eklenebilir. Telefonda telefonun kendi kamera ekranı açılır.
+- **Kitaptan masadaki herhangi bir noktaya ok:** Kalemle kitap sayfasından masada boş bir yere (örneğin kendi el yazının yanına) çizgi çek; ok o noktada biter. Tersi de olur: masada boş bir yerden kitap sayfasına çizgi çek. Uçtaki işarete dokununca karşı uca gidilir; masadaki nokta seçiliyken sürüklenerek taşınır. Renk, uç ve kesikli ayarları diğer oklardaki gibi. Notlu PDF'te iki uçta aynı numara olur.

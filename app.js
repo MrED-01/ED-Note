@@ -2,7 +2,7 @@
    adjustable stroke sizes, straight lines and the .ednote file format */
 (() => {
 "use strict";
-const APP_VERSION = "6.2.0";
+const APP_VERSION = "6.6.0";
 /* COMPATIBILITY RULE: every release must open and edit files from every earlier release.
    SCHEMA is the data version written to project.json. cleanProject() upgrades any older shape
    (v3 single-PDF files go through migrateV3 first) and never drops user content. Fixture files from
@@ -46,6 +46,8 @@ const ICON = {
   chevron:'<svg viewBox="0 0 24 24"><path d="m7 10 5 5 5-5"/></svg>',
   ungroup:'<svg viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="8" height="8" rx="1.5"/><rect x="12.5" y="12.5" width="8" height="8" rx="1.5"/></svg>',
   arrow:'<svg viewBox="0 0 24 24"><path d="M7 17 17 7M9 7h8v8"/></svg>',
+  hash:'<svg viewBox="0 0 24 24"><path d="M9.5 4 8 20M16 4l-1.5 16M4.5 9h15M4 15h15"/></svg>',
+  camera:'<svg viewBox="0 0 24 24"><path d="M4 8.5a2 2 0 0 1 2-2h2l1.5-2h5l1.5 2h2a2 2 0 0 1 2 2V18a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><circle cx="12" cy="13" r="3.6"/></svg>',
   palette:'<svg viewBox="0 0 24 24"><path d="M12 3.5a8.5 8.5 0 1 0 0 17c1.3 0 1.9-.8 1.6-1.8-.4-1.2.4-2.2 1.6-2.2h1.7a3.6 3.6 0 0 0 3.6-3.6c0-5.2-3.8-9.4-8.5-9.4z"/><circle cx="7.6" cy="11.4" r="1.1"/><circle cx="10.4" cy="7.6" r="1.1"/><circle cx="14.9" cy="7.9" r="1.1"/></svg>',
   font:'<svg viewBox="0 0 24 24"><path d="M4 19 9.5 5h1L16 19M6.2 14h7.6M17 19v-7.5M17 12.5c0-1.6 1-2.5 2.5-2.5"/></svg>',
   hat:'<svg viewBox="0 0 24 24"><path d="M2.8 15.6c3.4 1.7 15 1.7 18.4 0"/><path d="M5.6 15.3 7 8.7c.3-1.4 1.6-2.3 3-1.9l2 .6 2-.6c1.4-.4 2.7.5 3 1.9l1.4 6.6"/><path d="M6.4 12.3c3.6 1 7.6 1 11.2 0"/></svg>',
@@ -206,10 +208,10 @@ function save(){
   if (!S.proj) return;
   el.tabCount.textContent = spaceItems().length;
   if (S.sample){ setSaveState("Örnek proje, kaydedilmez"); return; }
-  setSaveState("Kaydediliyor…"); clearTimeout(saveTimer);
+  setSaveState("Kaydediliyor…"); clearTimeout(saveTimer); S.editTick = (S.editTick || 0) + 1;
   saveTimer = setTimeout(async () => {
     try {
-      await saveNow(); setSaveState(FS.ok ? "Kaydedildi · klasör" : "Kaydedildi");
+      await saveNow(); setSaveState(FS.ok ? "Kaydedildi · klasör" : "Kaydedildi"); OD.soon();
       if (!persistAsked && navigator.storage && navigator.storage.persist){ persistAsked = true; navigator.storage.persist().catch(() => {}); }
       folderSync();
     } catch (e){ console.error(e); setSaveState("Kaydedilemedi"); toast("Kaydedilemedi. Cihazında yer kalmamış olabilir."); }
@@ -275,10 +277,12 @@ const LINE_ICON = {
   free:'<svg viewBox="0 0 24 24"><path d="M3.5 15.5c2.5-6 4.5-6 6 0s3.5 6 6 0 3.5-5 5-3"/></svg>',
   line:'<svg viewBox="0 0 24 24"><path d="M4 18 20 6"/><circle cx="4" cy="18" r="1.3"/><circle cx="20" cy="6" r="1.3"/></svg>'
 };
-function savePrefs(){ ls.set("ednote:prefs", JSON.stringify({ presets:S.presets, sizeIdx:S.sizeIdx, lineMode:S.lineMode, lastFs:S.lastFs, lastBg:S.lastBg, lastFrame:S.lastFrame, lastFont:S.lastFont, textFont:S.textFont })); }
+function savePrefs(){ ls.set("ednote:prefs", JSON.stringify({ presets:S.presets, sizeIdx:S.sizeIdx, lineMode:S.lineMode, lastFs:S.lastFs, lastBg:S.lastBg, lastFrame:S.lastFrame, lastFont:S.lastFont, textFont:S.textFont, readMode:S.readMode || "", lastLinkColor:S.lastLinkColor || "", lastLinkDash:!!S.lastLinkDash })); }
 function loadPrefs(){
   try {
     const p = JSON.parse(ls.get("ednote:prefs") || "null"); if (!p) return;
+    if (p.readMode === "night" || p.readMode === "sepia") S.readMode = p.readMode;
+    if (LINK_COLORS[p.lastLinkColor]) S.lastLinkColor = p.lastLinkColor; S.lastLinkDash = !!p.lastLinkDash;
     for (const k of Object.keys(SIZE_DEF)){
       if (Array.isArray(p.presets && p.presets[k]) && p.presets[k].length === 3) S.presets[k] = p.presets[k].map(v => clamp(+v || SIZE_DEF[k][1], ...SIZE_RANGE[k]));
       if (p.sizeIdx && [0, 1, 2].includes(p.sizeIdx[k])) S.sizeIdx[k] = p.sizeIdx[k];
@@ -368,10 +372,10 @@ function makeViewer(idx){
   const head = document.createElement("div"); head.className = "vhead";
   const tabs = document.createElement("div"); tabs.className = "vtabs"; tabs.setAttribute("role", "tablist");
   const add = document.createElement("button"); add.className = "icon-btn sm"; add.title = "Projeye belge ekle"; add.setAttribute("aria-label", add.title); add.innerHTML = ICON.plus; add.onclick = () => { S.av = idx; markActive(); $("#filePdf").dataset.mode = "add"; $("#filePdf").click(); };
-  const ol = document.createElement("button"); ol.className = "icon-btn sm vbtn-ol"; ol.title = "İçindekiler ve yer imleri"; ol.setAttribute("aria-label", ol.title); ol.innerHTML = ICON.book; ol.onclick = () => openOutline(v, ol);
+  const ol = document.createElement("button"); ol.className = "icon-btn sm vbtn-ol"; ol.title = "Sayfalar, içindekiler ve yer imleri"; ol.setAttribute("aria-label", ol.title); ol.innerHTML = ICON.book; ol.onclick = () => openOutline(v, ol);
   const zoom = document.createElement("div"); zoom.className = "vzoom";
   const zo = document.createElement("button"); zo.className = "icon-btn sm zbtn"; zo.innerHTML = ICON.minus; zo.setAttribute("aria-label", "Uzaklaştır"); zo.onclick = () => setScale(v, clamp(v.scale / 1.2, 0.3, 4));
-  const pg = document.createElement("span"); pg.className = "hud-val"; pg.textContent = "–";
+  const pg = document.createElement("button"); pg.className = "hud-val pgbtn"; pg.textContent = "–"; pg.title = "Sayfalara göz at"; pg.onclick = () => openOutline(v, pg, "pages");
   const zi = document.createElement("button"); zi.className = "icon-btn sm zbtn"; zi.innerHTML = ICON.plus; zi.setAttribute("aria-label", "Yakınlaştır"); zi.onclick = () => setScale(v, clamp(v.scale * 1.2, 0.3, 4));
   const zf = document.createElement("button"); zf.className = "icon-btn sm"; zf.innerHTML = ICON.fit; zf.title = "Genişliğe sığdır"; zf.setAttribute("aria-label", zf.title); zf.onclick = () => fitWidth(v);
   zoom.append(zo, pg, zi, zf);
@@ -422,7 +426,7 @@ async function showDoc(v, fp){
   const pdf = await loadPdfDoc(fp);
   if (gen !== v.gen) return;
   if (!pdf){ toast("Bu belgenin PDF dosyası bu cihazda yok.", null, 4500); return; }
-  if (v.io) v.io.disconnect();
+  if (v.io) v.io.disconnect(); if (v.io2) v.io2.disconnect();
   const pages = []; let maxW = 0;
   for (let i = 1; i <= pdf.numPages; i++){
     const page = await pdf.getPage(i); if (gen !== v.gen) return;
@@ -452,9 +456,18 @@ function setScale(v, s, initial){
   observePages(v); updatePgInfo(v); scheduleX();
 }
 function observePages(v){
-  if (v.io) v.io.disconnect();
+  if (v.io) v.io.disconnect(); if (v.io2) v.io2.disconnect();
   v.io = new IntersectionObserver(entries => { for (const e of entries) if (e.isIntersecting){ const p = v.pages[+e.target.dataset.page - 1]; if (p && p.rendered !== v.scale) renderPage(v, p); } }, { root:v.pane, rootMargin:"800px 0px" });
-  v.pages.forEach(p => v.io.observe(p.div));
+  /* big books: pages far from view give their memory back and are drawn again when you come back */
+  v.io2 = new IntersectionObserver(entries => { for (const e of entries) if (!e.isIntersecting){ const p = v.pages[+e.target.dataset.page - 1]; if (p) unloadPage(p); } }, { root:v.pane, rootMargin:"4000px 0px" });
+  v.pages.forEach(p => { v.io.observe(p.div); v.io2.observe(p.div); });
+}
+function unloadPage(p){
+  if (!p.canvas && !p.task) return;
+  if (p.task){ try { p.task.cancel(); } catch {} p.task = null; }
+  if (p.canvas){ p.canvas.width = p.canvas.height = 0; p.canvas.remove(); p.canvas = null; }
+  if (p.text && !p.text.contains(document.getSelection().anchorNode)){ p.text.remove(); p.text = null; }
+  p.rendered = 0;
 }
 async function renderPage(v, p){
   const scale = v.scale; p.rendered = scale;
@@ -531,6 +544,7 @@ function renderCM(v, p){
     b.title = "Bağlı karta git"; b.setAttribute("aria-label", "Bağlantı işareti");
     b.onclick = e => { e.stopPropagation(); if (S.linkFrom){ completeAnchor({ type:"pin", id:pn.id }); return; }
       const DL = S.proj.links.find(l => l.pins && l.pins.includes(pn.id)); if (DL){ followDocLink(DL, pn.id, v.idx); return; }
+      const WL = S.proj.links.find(l => l.pin === pn.id); if (WL){ goToWsPoint(WL); return; }
       const L = S.proj.links.find(l => l.anchor && l.anchor.id === pn.id); if (L) focusCard(L.a); };
     p.cm.appendChild(b);
   }
@@ -611,9 +625,11 @@ function inkLinkTarget(e){
     if (card && el.ws.contains(card) && !isNarrow()) return { card };
     /* from one document to the other one shown side by side */
     const vr = page && page.closest(".viewer"); if (vr && +vr.dataset.v !== d.v.idx && !isNarrow()) return { page2:page };
+    /* from the book to any spot on the workspace, e.g. next to your handwriting */
+    if (!isNarrow() && el.ws.contains(under) && !under.closest(".hud,.spaces,.wsfind,.link-hint")) return { ws:true };
     return null;
   }
-  if (!d.srcCard) return null;
+  if (!d.srcCard){ if (page && !isNarrow()) return { page, fromWs:true }; return null; }
   if (card && el.ws.contains(card) && card.dataset.id !== d.srcCard) return { card };
   if (page && !isNarrow()) return { page };
   return null;
@@ -621,7 +637,7 @@ function inkLinkTarget(e){
 function linkPreview(e){
   clearLinkPreview();
   const t = inkLinkTarget(e); draw.path.style.opacity = t ? ".3" : ""; if (!t) return;
-  (t.card || t.page || t.page2).classList.add("linktarget");
+  (t.card || t.page || t.page2 || el.ws).classList.add("linktarget");
   const box = (draw.where === "pdf" ? draw.v.pane : el.ws).getBoundingClientRect();
   if (e.clientX >= box.left && e.clientX <= box.right && e.clientY >= box.top && e.clientY <= box.bottom) return;
   linkTmp.innerHTML = ARROW_DEFS("tmpA") + `<path class="xl tmp" d="M${draw.sx},${draw.sy} L${e.clientX},${e.clientY}" marker-end="url(#tmpA)"/>`;
@@ -630,7 +646,14 @@ function tryInkLink(e){
   const d = draw, t = inkLinkTarget(e); clearLinkPreview(); if (!t) return false;
   let link, pin = null;
   let pin2 = null;
-  if (d.where === "pdf" && t.page2){
+  const look = { ...(S.lastLinkColor ? { color:S.lastLinkColor } : {}), ...(S.lastLinkDash ? { dash:true } : {}) };
+  if (d.where === "pdf" && t.ws){
+    const p = screenToPlane(e.clientX, e.clientY); pin = makePin(d.v, d.p, d.start);
+    link = { id:uid(), pin:pin.id, at:{ space:S.space, x:r2(p.x), y:r2(p.y) }, heads:"end", ...look };
+  } else if (t.fromWs){
+    const vr = t.page.closest(".viewer"), v = S.viewers[+vr.dataset.v], p = v.pages[+t.page.dataset.page - 1];
+    pin = makePin(v, p, pagePoint(v, p, e)); link = { id:uid(), pin:pin.id, at:{ space:S.space, x:r2(d.start[0]), y:r2(d.start[1]) }, heads:"start", ...look };
+  } else if (d.where === "pdf" && t.page2){
     const vr = t.page2.closest(".viewer"), v2 = S.viewers[+vr.dataset.v], p2 = v2.pages[+t.page2.dataset.page - 1];
     pin = makePin(d.v, d.p, d.start); pin2 = makePin(v2, p2, pagePoint(v2, p2, e)); link = { id:uid(), pins:[pin.id, pin2.id], arrow:true };
   } else if (d.where === "pdf"){
@@ -644,8 +667,10 @@ function tryInkLink(e){
     pin = makePin(v, p, pagePoint(v, p, e)); link = { id:uid(), a:d.srcCard, anchor:{ type:"pin", id:pin.id }, to:"anchor" };
   }
   cancelAnimationFrame(d.raf); d.path.remove(); draw = null;
+  if (S.lastLinkColor) link.color = S.lastLinkColor; if (S.lastLinkDash) link.dash = true;
   S.proj.links.push(link); if (pin) renderDocPage(pin.doc, pin.page); if (pin2) renderDocPage(pin2.doc, pin2.page);
   if (link.pins){ S.selLink = null; commit(); scheduleX(); toast("İki belge birbirine bağlandı. İşarete dokununca karşı uca gidersin."); return true; }
+  if (link.pin){ growSheet(link.at.x - 20, link.at.y - 20, link.at.x + 20, link.at.y + 20); renderSheet(); S.selLink = null; drawLinks(); commit(); toast("Belgedeki yer masadaki noktaya bağlandı. İki uçtaki işarete dokununca karşı uca gidersin.", null, 4500); return true; }
   S.sel = link.a; S.selLink = null; renderWs(); commit(); toast(pin ? "Kart belgedeki yere bağlandı" : "Kartlar bağlandı");
   return true;
 }
@@ -847,8 +872,56 @@ $("#cmCard").onclick = () => {
 };
 
 /* ================= outline & bookmarks ================= */
-async function openOutline(v, anchor){
+/* page thumbnails: drawn small, lazily, one at a time; kept as small JPEGs */
+const thumbCache = new Map(); let thumbGen = 0, olTab = "pages";
+function thumbMarks(fp, n){
+  const q = S.proj, cards = q.items.filter(i => i.doc === fp && i.page === n).length;
+  return { cards, bm:q.bookmarks.some(b => b.doc === fp && b.page === n), ink:q.ink.some(s => s.doc === fp && s.page === n) || q.texts.some(t => t.doc === fp && t.page === n) || q.comments.some(c => c.doc === fp && c.page === n) };
+}
+function renderThumbs(v){
+  const grid = $("#thGrid"), gen = ++thumbGen, fp = v.fp; grid.innerHTML = "";
+  const queue = []; let busy = false;
+  const pump = async () => {
+    if (busy) return; busy = true;
+    while (queue.length && gen === thumbGen){
+      const { n, img } = queue.shift(), key = fp + ":" + n;
+      if (!thumbCache.has(key)){
+        try {
+          const page = await v.pdf.getPage(n), vp1 = page.getViewport({ scale:1 }), sc = 200 / vp1.width, vp = page.getViewport({ scale:sc });
+          const c = document.createElement("canvas"); c.width = Math.ceil(vp.width); c.height = Math.ceil(vp.height);
+          const ctx = c.getContext("2d"); ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, c.width, c.height);
+          await page.render({ canvasContext:ctx, viewport:vp }).promise;
+          if (thumbCache.size > 600) thumbCache.delete(thumbCache.keys().next().value);
+          thumbCache.set(key, c.toDataURL("image/jpeg", 0.72));
+        } catch { continue; }
+      }
+      if (gen === thumbGen){ img.src = thumbCache.get(key); img.closest(".th").classList.add("ready"); }
+    }
+    busy = false;
+  };
+  const io = new IntersectionObserver(es => { for (const e of es) if (e.isIntersecting){ io.unobserve(e.target); queue.push({ n:+e.target.dataset.page, img:e.target.querySelector("img") }); } queue.sort((a, b) => a.n - b.n); pump(); }, { root:el.outlinePop, rootMargin:"300px 0px" });
+  for (const p of v.pages){
+    const b = document.createElement("button"); b.className = "th"; b.dataset.page = p.n; b.style.setProperty("--ar", (p.w / p.h).toFixed(4));
+    if (p.n === v.curPage) b.classList.add("cur");
+    const m = thumbMarks(fp, p.n);
+    b.innerHTML = `<span class="th-img"><img alt=""></span><span class="th-n">${p.n}</span>` + (m.bm ? `<span class="th-bm" title="Yer imi"></span>` : "") + (m.cards ? `<span class="th-c" title="${m.cards} kart">${m.cards}</span>` : m.ink ? `<span class="th-c dot" title="Not var"></span>` : "");
+    b.setAttribute("aria-label", `Sayfa ${p.n}`);
+    const key = fp + ":" + p.n; if (thumbCache.has(key)){ b.querySelector("img").src = thumbCache.get(key); b.classList.add("ready"); } else io.observe(b);
+    b.onclick = () => { closePop(); scrollToPage(v, p.n, 0, true); };
+    grid.appendChild(b);
+  }
+  const obs = new MutationObserver(() => { if (el.outlinePop.hidden){ thumbGen++; io.disconnect(); obs.disconnect(); } }); obs.observe(el.outlinePop, { attributes:true, attributeFilter:["hidden"] });
+  requestAnimationFrame(() => { const cur = grid.querySelector(".th.cur"); if (cur) el.outlinePop.scrollTop = Math.max(0, cur.offsetTop - el.outlinePop.clientHeight / 2 + cur.offsetHeight / 2); });
+}
+function setOlTab(v, t){
+  olTab = t; $("#olPages").hidden = t !== "pages"; $("#olToc").hidden = t !== "toc";
+  $("#olTabs").querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.t === t)));
+  el.outlinePop.classList.toggle("wide", t === "pages");
+  if (t === "pages") renderThumbs(v);
+}
+async function openOutline(v, anchor, tab){
   if (!v.pdf) return;
+  if (tab) olTab = tab;
   $("#olTitle").textContent = docName(v.fp);
   const bm = $("#bmList"); bm.innerHTML = "";
   for (const b of S.proj.bookmarks.filter(x => x.doc === v.fp).sort((a, b) => a.page - b.page)){
@@ -865,7 +938,11 @@ async function openOutline(v, anchor){
     S.proj.bookmarks.push({ id:uid(), doc:v.fp, page, title:`Sayfa ${page}` }); renderDocPage(v.fp, page); commit(); openOutline(v, anchor);
   };
   const ol = $("#olList"); ol.innerHTML = ""; $("#olEmpty").hidden = true;
+  $("#olTabs").querySelectorAll("button").forEach(b => b.onclick = () => setOlTab(v, b.dataset.t));
+  $("#olPages").hidden = olTab !== "pages"; $("#olToc").hidden = olTab !== "toc"; el.outlinePop.classList.toggle("wide", olTab === "pages");
+  $("#olTabs").querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.t === olTab)));
   openPop(el.outlinePop, anchor);
+  if (olTab === "pages") renderThumbs(v);
   try {
     const outline = await v.pdf.getOutline();
     if (!outline || !outline.length){ $("#olEmpty").hidden = false; return; }
@@ -1003,8 +1080,8 @@ chipQ.addEventListener("pointercancel", e => endChip(e, true));
 function overWs(e){ if (isNarrow()) return false; const r = el.ws.getBoundingClientRect(); return e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom; }
 /* new cards go to a free place near the middle of the view, so they never land on top of each other.
    Places that are fully on screen come first, and right/below is preferred over left/above. */
-function defaultSpot(){
-  const f = S.lastFs || 1, w = Math.round(Math.min(900, 250 * f)), h = Math.round(150 * f);
+function defaultSpot(sz){
+  const f = S.lastFs || 1, w = sz ? sz.w : Math.round(Math.min(900, 250 * f)), h = sz ? sz.h : Math.round(150 * f);
   const r = el.ws.getBoundingClientRect(), v = view(), vw = r.width || window.innerWidth, vh = r.height || window.innerHeight * 0.7;
   const bx = (vw / 2 - v.tx) / v.s - w / 2, by = (vh / 3 - v.ty) / v.s - h / 3;
   const boxes = S.proj ? [...el.plane.querySelectorAll(":scope > .card, :scope > .group")].map(n => ({ x:n.offsetLeft, y:n.offsetTop, w:n.offsetWidth, h:n.offsetHeight })) : [];
@@ -1191,7 +1268,7 @@ function renderWs(){
   el.plane.querySelectorAll("textarea.note").forEach(autosize);
   el.wsEmpty.hidden = items.length > 0 || S.proj.ink.some(s => s.where === "ws" && s.space === S.space);
   el.tabCount.textContent = items.length;
-  renderSheet(); renderWsInk(); if (growToContent()) save(); applyView(); drawLinks(); refreshReveal();
+  renderSheet(); renderWsInk(); if (growToContent()) save(); applyView(); drawLinks(); refreshReveal(); applyWsFilter();
 }
 function autosize(t){ t.style.height = "auto"; t.style.height = t.scrollHeight + "px"; }
 function groupEl(g, mem){
@@ -1238,7 +1315,7 @@ function normalizeGroups(){
   }
 }
 function anchorObj(a){ const list = { ink:S.proj.ink, text:S.proj.texts, comment:S.proj.comments, pin:S.proj.pins }[a.type] || []; return list.find(o => o.id === a.id); }
-const pinUsed = (links, id) => links.some(l => (l.anchor && l.anchor.id === id) || (l.pins && l.pins.includes(id)));
+const pinUsed = (links, id) => links.some(l => (l.anchor && l.anchor.id === id) || (l.pins && l.pins.includes(id)) || l.pin === id);
 function prunePins(){ const before = S.proj.pins.length; S.proj.pins = S.proj.pins.filter(n => pinUsed(S.proj.links, n.id)); return before !== S.proj.pins.length; }
 function anchorLabel(a){
   const o = anchorObj(a); if (!o || !o.doc) return null;
@@ -1252,7 +1329,8 @@ function cardEl(it, inGroup){
   if (it.font) c.style.setProperty("--cf", fontCss(it.font));
   if (!inGroup){ c.style.left = it.x + "px"; c.style.top = it.y + "px"; c.style.width = it.w + "px"; }
   const head = document.createElement("div"); head.className = "card-head";
-  if (it.type === "excerpt" || it.type === "image"){
+  if (it.photo){ const k = document.createElement("span"); k.className = "kind"; k.innerHTML = `<i class="c-${it.color}"></i>Fotoğraf`; head.appendChild(k); }
+  else if (it.type === "excerpt" || it.type === "image"){
     const pg = document.createElement("button"); pg.className = "pg"; pg.innerHTML = `<i class="c-${it.color}"></i>`;
     const pgt = document.createElement("span"); pgt.className = "pg-t"; pgt.textContent = (it.type === "image" ? "Görsel · " : "") + (S.proj.docs.length > 1 ? docName(it.doc).slice(0, 22) + " · " : "") + "s. " + it.page; pg.appendChild(pgt);
     pg.title = "Belgede bu yere git"; pg.onclick = () => goToExcerpt(it.id); head.appendChild(pg);
@@ -1275,16 +1353,29 @@ function cardEl(it, inGroup){
     c.appendChild(row);
   }
   if (it.type === "excerpt"){ const q = document.createElement("div"); q.className = "quote"; q.textContent = it.text; c.appendChild(q); }
-  if (it.type === "image"){ const im = document.createElement("img"); im.className = "shot"; im.alt = "Sayfa " + it.page + " görsel alıntısı"; im.draggable = false; im.src = it.src; im.onload = drawLinks; c.appendChild(im); }
+  if (it.type === "image"){ const im = document.createElement("img"); im.className = "shot"; im.alt = it.photo ? "Fotoğraf" : "Sayfa " + it.page + " görsel alıntısı"; im.draggable = false; im.src = it.src; im.onload = drawLinks; c.appendChild(im); }
   const ta = document.createElement("textarea"); ta.className = "note"; ta.rows = 1; ta.setAttribute("aria-label", "Kart notu");
-  ta.placeholder = it.type === "note" ? "Düşünceni yaz…" : "Not ekle…"; ta.value = it.note || ""; ta.dataset.note = it.id;
+  ta.placeholder = it.type === "note" ? "Düşünceni yaz… (formül için $E = mc^2$)" : "Not ekle…"; ta.value = it.note || ""; ta.dataset.note = it.id;
   ta.addEventListener("input", () => { it.note = ta.value; autosize(ta); drawLinks(); save(); });
   ta.addEventListener("change", commit); ta.addEventListener("focus", () => select(it.id));
   c.appendChild(ta);
+  /* when a note has formulas, show them rendered; a tap switches back to editing */
+  const mv = document.createElement("div"); mv.className = "note mview"; mv.title = "Düzenlemek için dokun";
+  const showMath = () => { const on = hasMath(it.note) && document.activeElement !== ta; mv.hidden = !on; ta.hidden = on; if (on) renderMathInto(mv, it.note); };
+  mv.addEventListener("click", () => { if (Date.now() - lastDragEnd < 350 || S.linkFrom) return; mv.hidden = true; ta.hidden = false; autosize(ta); ta.focus(); });
+  ta.addEventListener("blur", () => { showMath(); drawLinks(); });
+  c.appendChild(mv); showMath();
+  if (it.tags && it.tags.length){
+    const tr = document.createElement("div"); tr.className = "ctags";
+    for (const t of it.tags){ const b = document.createElement("button"); b.className = "tchip sm"; b.textContent = "#" + t; b.title = "Bu etiketli kartları göster"; b.onclick = () => openWsFind({ tag:t }); tr.appendChild(b); }
+    c.appendChild(tr);
+  }
   const cols = document.createElement("div"); cols.className = "colors";
   for (const k of HL_COLORS){ const d = document.createElement("button"); d.className = "dot c-" + k + (it.color === k ? " on" : ""); d.title = CNAME[k]; d.setAttribute("aria-label", CNAME[k]); d.onclick = () => { it.color = k; S.lastColor = k; renderWs(); if (it.doc) renderDocPage(it.doc, it.page); commit(); }; cols.appendChild(d); }
   const stb = document.createElement("button"); stb.className = "fsb cst"; stb.innerHTML = ICON.palette; stb.title = "Kağıt, çerçeve ve yazı tipi"; stb.setAttribute("aria-label", stb.title);
   stb.onclick = () => openCardStyle(it.id, stb); cols.appendChild(stb);
+  const tgb = document.createElement("button"); tgb.className = "fsb ctg"; tgb.innerHTML = ICON.hash; tgb.title = "Etiketler"; tgb.setAttribute("aria-label", tgb.title);
+  tgb.onclick = () => openTagPop(it.id, tgb); cols.appendChild(tgb);
   const sp2 = document.createElement("span"); sp2.className = "spacer"; cols.appendChild(sp2);
   for (const [dir, lab, tip] of [[-1, "A−", "Yazıyı küçült (−)"], [1, "A+", "Yazıyı büyüt (+)"]]){
     const f = document.createElement("button"); f.className = "fsb" + (dir > 0 ? " up" : ""); f.textContent = lab; f.title = tip; f.setAttribute("aria-label", tip);
@@ -1308,6 +1399,56 @@ function cardEl(it, inGroup){
   cardEls.set(it.id, c);
   return c;
 }
+/* ---- formulas in notes: $inline$ and $$display$$, drawn by MathJax as SVG ---- */
+/* pandoc rules, so prices like "$5 ve $10" in old notes stay plain text:
+   an inline formula must not start with a space, must not end with a space, and the closing $ must not be followed by a digit */
+const hasMath = t => !!t && t.includes("$") && parseMath(t).some(x => x.t === "math");
+function inlineClose(t, from){
+  if (/\s/.test(t[from] || " ")) return -1;
+  for (let j = from; j < t.length; j++){
+    if (t[j] === "\n") return -1;
+    if (t[j] === "\\"){ j++; continue; }
+    if (t[j] === "$" && !/\s/.test(t[j - 1]) && !/\d/.test(t[j + 1] || "")) return j;
+  }
+  return -1;
+}
+function parseMath(t){
+  const out = []; let i = 0, buf = "";
+  while (i < t.length){
+    if (t[i] === "\\" && t[i + 1] === "$"){ buf += "$"; i += 2; continue; }
+    if (t[i] === "$"){
+      const disp = t[i + 1] === "$", open = disp ? 2 : 1, close = disp ? t.indexOf("$$", i + 2) : inlineClose(t, i + 1);
+      if (close > i + open && (disp || !t.slice(i + 1, close).includes("\n"))){
+        if (disp) buf = buf.replace(/\n$/, "");
+        if (buf) out.push({ t:"text", s:buf }); buf = ""; out.push({ t:"math", tex:t.slice(i + open, close).trim(), display:disp }); i = close + open;
+        if (disp && t[i] === "\n") i++;
+        continue;
+      }
+    }
+    buf += t[i++];
+  }
+  if (buf) out.push({ t:"text", s:buf });
+  return out;
+}
+let mjLoad = null;
+function loadMathJax(){
+  if (window.MathJax && window.MathJax.tex2svg) return Promise.resolve();
+  if (!mjLoad){ window.MathJax = { svg:{ fontCache:"none" }, startup:{ typeset:false } };
+    mjLoad = loadScript("vendor/mathjax/tex-svg.js").then(() => window.MathJax.startup.promise).then(() => { try { document.head.appendChild(window.MathJax.svgStylesheet()); } catch {} }); }
+  return mjLoad;
+}
+function renderMathInto(box, text){
+  box.textContent = "";
+  for (const seg of parseMath(text)){
+    if (seg.t === "text"){ box.appendChild(document.createTextNode(seg.s)); continue; }
+    const span = document.createElement("span"); span.className = seg.display ? "mx mx-d" : "mx"; span.textContent = seg.tex; box.appendChild(span);
+    loadMathJax().then(() => { try { const n = window.MathJax.tex2svg(seg.tex, { display:seg.display });
+      if (n.querySelector("[data-mjx-error], merror")){ span.classList.add("mx-err"); span.title = "Formülde hata var"; return; }
+      span.textContent = ""; span.appendChild(n); drawLinks(); } catch {} }).catch(() => {});
+  }
+}
+let lastDragEnd = 0;
+
 /* ---- card look: colour, paper, frame, font ---- */
 const stylePop = document.createElement("div"); stylePop.className = "pop style-pop"; stylePop.hidden = true; stylePop.setAttribute("role", "dialog"); document.body.appendChild(stylePop);
 const fontPop = document.createElement("div"); fontPop.className = "pop font-pop"; fontPop.hidden = true; fontPop.setAttribute("role", "dialog"); fontPop.setAttribute("aria-label", "Yazı tipi"); document.body.appendChild(fontPop);
@@ -1385,7 +1526,7 @@ function startCardDrag(e, it, c){
   const up = () => {
     window.removeEventListener("pointermove", mv); window.removeEventListener("pointerup", up); window.removeEventListener("pointercancel", up);
     c.classList.remove("dragging"); const t = target; setTarget(null);
-    if (!moved) return;
+    if (!moved) return; lastDragEnd = Date.now();
     if (t) dropOn(it, t);
     normalizeGroups(); renderWs(); commit();
   };
@@ -1429,24 +1570,128 @@ function linkCurve(A, B){
   }
   const mx = (A.cx + B.cx) / 2; return { d:`M${A.cx},${A.cy} C${mx},${A.cy} ${mx},${B.cy} ${B.cx},${B.cy}`, mx, my:(A.cy + B.cy) / 2 };
 }
-const ARROW_DEFS = id => `<defs><marker id="${id}" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse"><path d="M0,0.8 L10,5 L0,9.2 L2.6,5 Z"/></marker><marker id="${id}On" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M0,0.8 L10,5 L0,9.2 L2.6,5 Z"/></marker></defs>`;
+/* ---- link look: colour, arrowheads, dashes ---- */
+const LINK_COLORS = { r:"#e5534b", b:"#3a7fd5", g:"#3f9b62", o:"#e8892f", v:"#8a63d2" };
+const LINK_CNAME = { "":"Varsayılan", r:"Kırmızı", b:"Mavi", g:"Yeşil", o:"Turuncu", v:"Mor" };
+const HEADS = ["end", "start", "both", "none"];
+/* old files keep their arrows: card links had "arrow", document links "to" */
+function linkHeads(L){
+  if (HEADS.includes(L.heads)) return L.heads;
+  if (L.anchor) return L.to === "card" ? "end" : L.to === "anchor" ? "start" : "none";
+  return L.arrow ? "end" : "none";
+}
+function setLinkHeads(L, h){
+  L.heads = h;
+  if (L.anchor){ if (h === "end" || h === "both") L.to = "card"; else if (h === "start") L.to = "anchor"; else delete L.to; }
+  else if (h === "end" || h === "both") L.arrow = true; else delete L.arrow;
+}
+const markerPath = '<path d="M0,0.8 L10,5 L0,9.2 L2.6,5 Z"/>';
+const ARROW_DEFS = id => `<defs><marker id="${id}" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">${markerPath}</marker><marker id="${id}On" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">${markerPath}</marker>` +
+  Object.entries(LINK_COLORS).map(([c, hex]) => `<marker id="${id}-${c}" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="5.5" markerHeight="5.5" orient="auto-start-reverse"><path style="fill:${hex}" d="M0,0.8 L10,5 L0,9.2 L2.6,5 Z"/></marker>`).join("") + `</defs>`;
+/* applies colour, dashes and arrowheads to a drawn link */
+function styleLink(path, L, base, on){
+  const h = linkHeads(L), mk = `url(#${base}${L.color && LINK_COLORS[L.color] ? "-" + L.color : on ? "On" : ""})`;
+  if (L.color && LINK_COLORS[L.color]) path.style.stroke = LINK_COLORS[L.color];
+  if (L.dash) path.style.strokeDasharray = "7 5";
+  if (h === "end" || h === "both") path.setAttribute("marker-end", mk);
+  if (h === "start" || h === "both") path.setAttribute("marker-start", mk);
+}
+const selLinkObj = () => S.selLink && S.proj && S.proj.links.find(l => l.id === S.selLink);
+const isWsLink = L => !L.anchor && !L.pins && !L.pin;
+function pointBox(p){ return { x1:p.x, y1:p.y, x2:p.x, y2:p.y, cx:p.x, cy:p.y }; }
 function drawLinks(){
-  el.links.innerHTML = ARROW_DEFS("lkA"); el.plane.querySelectorAll(".lk-del").forEach(n => n.remove());
+  el.links.innerHTML = ARROW_DEFS("lkA"); el.plane.querySelectorAll(".lk-del,.lk-pt").forEach(n => n.remove());
   if (!S.proj) return;
+  let mid = null;
   for (const L of S.proj.links){
-    if (L.anchor) continue;
-    const a = itemById(L.a), b = itemById(L.b); if (!a || !b || a.space !== S.space || b.space !== S.space) continue;
-    const A = boxOf(a.id), B = boxOf(b.id); if (!A || !B) continue;
+    if (!isWsLink(L)) continue;
+    const a = itemById(L.a); if (!a || a.space !== S.space) continue;
+    let B;
+    if (L.pt) B = pointBox(L.pt);
+    else { const b = itemById(L.b); if (!b || b.space !== S.space) continue; B = boxOf(b.id); }
+    const A = boxOf(a.id); if (!A || !B) continue;
     const { d, mx, my } = linkCurve(A, B), on = S.selLink === L.id;
+    if (on){ const halo = document.createElementNS(NS, "path"); halo.setAttribute("d", d); halo.setAttribute("class", "lk-halo"); el.links.appendChild(halo); }
     const vis = document.createElementNS(NS, "path"); vis.setAttribute("d", d); vis.setAttribute("class", "lk" + (on ? " on" : ""));
-    if (L.arrow) vis.setAttribute("marker-end", on ? "url(#lkAOn)" : "url(#lkA)");
+    styleLink(vis, L, "lkA", on);
     const hit = document.createElementNS(NS, "path"); hit.setAttribute("d", d); hit.setAttribute("class", "lk-hit");
-    hit.addEventListener("pointerdown", e => { if (S.tool !== "select") return; e.stopPropagation(); S.selLink = L.id; S.sel = null; cardEls.forEach(c => c.classList.remove("selected")); drawLinks(); });
+    hit.addEventListener("pointerdown", e => { if (S.tool !== "select") return; e.stopPropagation(); selectLink(L.id); });
     el.links.append(vis, hit);
-    if (on){ const btn = document.createElement("button"); btn.className = "lk-del"; btn.title = "Bağlantıyı sil"; btn.innerHTML = ICON.x; btn.style.left = mx + "px"; btn.style.top = my + "px"; btn.addEventListener("pointerdown", e => e.stopPropagation()); btn.onclick = () => removeLink(L.id); el.plane.appendChild(btn); }
+    if (L.pt) endDot(L, L.pt, on);
+    if (on) mid = { x:mx, y:my };
   }
+  /* workspace ends of book-to-workspace links */
+  for (const L of S.proj.links) if (L.pin && L.at.space === S.space) endDot(L, L.at, S.selLink === L.id);
+  const sl = selLinkObj();
+  if (sl && isWsLink(sl)){ if (mid){ const r = el.ws.getBoundingClientRect(), v = view(); showLkBar(sl, r.left + v.tx + mid.x * v.s, r.top + v.ty + mid.y * v.s); } else hideLkBar(); }
+  else if (!sl) hideLkBar();
   scheduleX();
 }
+/* the free end of a link on the workspace: a small dot, draggable when the link is selected */
+function endDot(L, P, on){
+  const dot = document.createElement("div"); dot.className = "lk-pt" + (on ? " on" : "") + (L.pin ? " pinend" : ""); dot.style.left = P.x + "px"; dot.style.top = P.y + "px";
+  if (L.color && LINK_COLORS[L.color]) dot.style.setProperty("--lc", LINK_COLORS[L.color]);
+  dot.title = on ? "Ucu taşı" : L.pin ? "Belgedeki yere git" : "Bağlantıyı seç";
+  dot.addEventListener("pointerdown", e => {
+    if (S.tool !== "select") return; e.stopPropagation(); e.preventDefault();
+    if (S.selLink !== L.id){ selectLink(L.id); if (L.pin) goToPin(L.pin); return; }
+    dot.setPointerCapture(e.pointerId); let moved = false;
+    const mv = ev => { const p = screenToPlane(ev.clientX, ev.clientY); P.x = r2(p.x); P.y = r2(p.y); moved = true; growSheet(P.x - 20, P.y - 20, P.x + 20, P.y + 20); drawLinks(); };
+    const up = () => { dot.removeEventListener("pointermove", mv); dot.removeEventListener("pointerup", up); dot.removeEventListener("pointercancel", up); if (moved){ renderSheet(); commit(); } };
+    dot.addEventListener("pointermove", mv); dot.addEventListener("pointerup", up); dot.addEventListener("pointercancel", up);
+  });
+  el.plane.appendChild(dot);
+}
+async function goToPin(id){
+  const n = S.proj.pins.find(x => x.id === id); if (!n) return;
+  await revealInDoc(n.doc, n.page, n.y - 60);
+  setTimeout(() => { const m = document.querySelector(`.pinmark[data-id="${id}"]`); if (m){ m.classList.add("pulse"); setTimeout(() => m.classList.remove("pulse"), 1600); } scheduleX(); }, 450);
+}
+function goToWsPoint(L){
+  if (isNarrow()) setTab("ws");
+  if (L.at.space !== S.space) switchSpace(L.at.space);
+  requestAnimationFrame(() => {
+    const r = el.ws.getBoundingClientRect(), v = view();
+    v.tx = r.width / 2 - L.at.x * v.s; v.ty = r.height / 2 - L.at.y * v.s; applyView(); selectLink(L.id); save();
+  });
+}
+function selectLink(id){
+  S.selLink = id; S.sel = null; cardEls.forEach(c => c.classList.remove("selected"));
+  if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+  drawLinks(); scheduleX();
+}
+function deselectLink(){ if (!S.selLink) return; S.selLink = null; hideLkBar(); drawLinks(); scheduleX(); }
+
+/* the small toolbar on a selected link */
+const lkBar = (() => {
+  const bar = document.createElement("div"); bar.className = "lkbar"; bar.id = "lkBar"; bar.hidden = true; bar.setAttribute("role", "toolbar"); bar.setAttribute("aria-label", "Bağlantı");
+  const cols = document.createElement("div"); cols.className = "lkb-cols";
+  for (const c of ["", ...Object.keys(LINK_COLORS)]){ const b = document.createElement("button"); b.className = "lkb-dot"; b.dataset.c = c; b.title = LINK_CNAME[c]; b.setAttribute("aria-label", LINK_CNAME[c]); if (c) b.style.background = LINK_COLORS[c]; b.onclick = () => editLink(L => { if (c) L.color = c; else delete L.color; S.lastLinkColor = c; savePrefs(); }); cols.appendChild(b); }
+  const heads = document.createElement("div"); heads.className = "seg3 lkb-heads";
+  const HI = { end:'<svg viewBox="0 0 24 24"><path d="M4 12h15M14 7l5 5-5 5"/></svg>', start:'<svg viewBox="0 0 24 24"><path d="M20 12H5M10 7l-5 5 5 5"/></svg>', both:'<svg viewBox="0 0 24 24"><path d="M5 12h14M9 8l-4 4 4 4M15 8l4 4-4 4"/></svg>', none:'<svg viewBox="0 0 24 24"><path d="M4 12h16"/></svg>' };
+  const HT = { end:"Ok sonda", start:"Ok başta", both:"İki uçta ok", none:"Oksuz" };
+  for (const h of HEADS){ const b = document.createElement("button"); b.dataset.h = h; b.innerHTML = HI[h]; b.title = HT[h]; b.setAttribute("aria-label", HT[h]); b.onclick = () => editLink(L => setLinkHeads(L, h)); heads.appendChild(b); }
+  const dash = document.createElement("button"); dash.className = "icon-btn sm lkb-dash"; dash.innerHTML = '<svg viewBox="0 0 24 24"><path d="M3 12h4M10 12h4M17 12h4"/></svg>'; dash.title = "Kesikli çizgi"; dash.setAttribute("aria-label", dash.title);
+  dash.onclick = () => editLink(L => { if (L.dash) delete L.dash; else L.dash = true; S.lastLinkDash = !!L.dash; savePrefs(); });
+  const del = document.createElement("button"); del.className = "icon-btn sm lkb-del"; del.innerHTML = ICON.del; del.title = "Bağlantıyı sil"; del.setAttribute("aria-label", del.title); del.onclick = () => { const id = S.selLink; hideLkBar(); if (id) removeLink(id); };
+  const sep = () => { const s = document.createElement("span"); s.className = "lkb-sep"; return s; };
+  bar.append(cols, sep(), heads, dash, sep(), del);
+  bar.addEventListener("pointerdown", e => e.stopPropagation());
+  document.body.appendChild(bar);
+  return bar;
+})();
+function editLink(fn){ const L = selLinkObj(); if (!L) return; fn(L); drawLinks(); scheduleX(); if (L.pins || L.anchor) renderAllOverlays(); commit(); }
+function showLkBar(L, x, y){
+  lkBar.querySelectorAll(".lkb-dot").forEach(b => b.classList.toggle("on", (L.color || "") === b.dataset.c));
+  const h = linkHeads(L); lkBar.querySelectorAll(".lkb-heads button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.h === h)));
+  lkBar.querySelector(".lkb-dash").setAttribute("aria-pressed", String(!!L.dash));
+  lkBar.hidden = false;
+  const w = lkBar.offsetWidth, hh = lkBar.offsetHeight;
+  lkBar.style.left = clamp(x - w / 2, 8, window.innerWidth - w - 8) + "px";
+  lkBar.style.top = clamp(y - hh - 16, 8, window.innerHeight - hh - 8) + "px";
+}
+function hideLkBar(){ lkBar.hidden = true; }
+document.addEventListener("pointerdown", e => { if (S.selLink && !e.target.closest("#lkBar,.lk-hit,.xl-hit,.lk-pt")) deselectLink(); }, true);
 
 /* ================= cross-pane links (card <-> document) ================= */
 let xRaf = 0;
@@ -1461,17 +1706,33 @@ function anchorEl(a){
 }
 function drawX(){
   const svg = el.xlinks; svg.innerHTML = "";
-  if (!S.proj || document.body.dataset.view !== "editor" || isNarrow()) return;
+  const sl = selLinkObj();
+  if (!S.proj || document.body.dataset.view !== "editor" || isNarrow()){ if (sl && !isWsLink(sl)) hideLkBar(); return; }
   const mr = el.main.getBoundingClientRect(), wsBox = el.ws.getBoundingClientRect();
+  let xmid = null;
+  const hitFor = (d, L) => { const h = document.createElementNS(NS, "path"); h.setAttribute("d", d); h.setAttribute("class", "xl-hit"); h.addEventListener("pointerdown", e => { if (S.tool !== "select") return; e.stopPropagation(); e.preventDefault(); selectLink(L.id); }); return h; };
+  const halo = (d, L) => { if (S.selLink !== L.id) return; const h = document.createElementNS(NS, "path"); h.setAttribute("d", d); h.setAttribute("class", "lk-halo"); svg.appendChild(h); };
   const pairs = [];
   svg.innerHTML = ARROW_DEFS("xlA");
-  for (const L of S.proj.links) if (L.anchor){ const it = itemById(L.a); if (it && it.space === S.space) pairs.push({ card:L.a, a:L.anchor, cls:"xl", to:L.to }); }
+  for (const L of S.proj.links) if (L.anchor){ const it = itemById(L.a); if (it && it.space === S.space) pairs.push({ card:L.a, a:L.anchor, cls:"xl", L }); }
   if (S.sel){ const it = itemById(S.sel); if (it && (it.type === "excerpt" || it.type === "image")) pairs.push({ card:it.id, a:{ type:"hl", id:it.id }, cls:"xl src" }); }
   /* document to document links, when both ends are on screen */
   for (const L of S.proj.links) if (L.pins){
     const a = anchorEl({ type:"pin", id:L.pins[0] }), b = anchorEl({ type:"pin", id:L.pins[1] }); if (!a || !b) continue;
     const ra = a.getBoundingClientRect(), rb = b.getBoundingClientRect(), x1 = ra.left + ra.width / 2 - mr.left, y1 = ra.top + ra.height / 2 - mr.top, x2 = rb.left + rb.width / 2 - mr.left, y2 = rb.top + rb.height / 2 - mr.top, mx = (x1 + x2) / 2;
-    const path = document.createElementNS(NS, "path"); path.setAttribute("d", `M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}`); path.setAttribute("class", "xl dd"); if (L.arrow) path.setAttribute("marker-end", "url(#xlA)"); svg.appendChild(path);
+    const d = `M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}`; halo(d, L);
+    const path = document.createElementNS(NS, "path"); path.setAttribute("d", d); path.setAttribute("class", "xl dd"); styleLink(path, L, "xlA"); svg.append(path, hitFor(d, L));
+    if (S.selLink === L.id) xmid = { x:mx + mr.left, y:(y1 + y2) / 2 + mr.top };
+  }
+  /* book to workspace point */
+  for (const L of S.proj.links) if (L.pin && L.at.space === S.space){
+    const a = anchorEl({ type:"pin", id:L.pin }); if (!a) continue;
+    const v = view(), sx = wsBox.left + v.tx + L.at.x * v.s, sy = wsBox.top + v.ty + L.at.y * v.s;
+    if (sx < wsBox.left || sx > wsBox.right || sy < wsBox.top || sy > wsBox.bottom) continue;
+    const ra = a.getBoundingClientRect(), x1 = ra.left + ra.width / 2 - mr.left, y1 = ra.top + ra.height / 2 - mr.top, x2 = sx - mr.left, y2 = sy - mr.top, mx = (x1 + x2) / 2;
+    const d = `M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}`; halo(d, L);
+    const path = document.createElementNS(NS, "path"); path.setAttribute("d", d); path.setAttribute("class", "xl"); styleLink(path, L, "xlA"); svg.append(path, hitFor(d, L));
+    if (S.selLink === L.id) xmid = { x:mx + mr.left, y:(y1 + y2) / 2 + mr.top };
   }
   for (const pr of pairs){
     const cn = visibleCardNode(pr.card); if (!cn) continue;
@@ -1480,10 +1741,14 @@ function drawX(){
     const ar = an.getBoundingClientRect();
     const x1 = ar.right - mr.left, y1 = ar.top + ar.height / 2 - mr.top, x2 = Math.max(wsBox.left, cr.left) - mr.left, y2 = cr.top + Math.min(26, cr.height / 2) - mr.top;
     const mx = (x1 + x2) / 2;
-    const path = document.createElementNS(NS, "path"); path.setAttribute("d", `M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}`); path.setAttribute("class", pr.cls); svg.appendChild(path);
-    if (pr.to === "card") path.setAttribute("marker-end", "url(#xlA)"); else if (pr.to === "anchor") path.setAttribute("marker-start", "url(#xlA)");
-    for (const [x, y, end] of [[x1, y1, "anchor"], [x2, y2, "card"]]){ if (pr.to === end) continue; const c = document.createElementNS(NS, "circle"); c.setAttribute("cx", x); c.setAttribute("cy", y); c.setAttribute("r", 3); c.setAttribute("class", "xl-dot"); svg.appendChild(c); }
+    const d = `M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}`;
+    if (pr.L) halo(d, pr.L);
+    const path = document.createElementNS(NS, "path"); path.setAttribute("d", d); path.setAttribute("class", pr.cls); svg.appendChild(path);
+    const h = pr.L ? linkHeads(pr.L) : "none";
+    if (pr.L){ styleLink(path, pr.L, "xlA"); svg.appendChild(hitFor(d, pr.L)); if (S.selLink === pr.L.id) xmid = { x:mx + mr.left, y:(y1 + y2) / 2 + mr.top }; }
+    for (const [x, y, end] of [[x1, y1, "start"], [x2, y2, "end"]]){ if (h === end || h === "both") continue; const c = document.createElementNS(NS, "circle"); c.setAttribute("cx", x); c.setAttribute("cy", y); c.setAttribute("r", 3); c.setAttribute("class", "xl-dot"); if (pr.L && pr.L.color && LINK_COLORS[pr.L.color]) c.style.fill = LINK_COLORS[pr.L.color]; svg.appendChild(c); }
   }
+  if (sl && !isWsLink(sl)){ if (xmid) showLkBar(sl, xmid.x, xmid.y); else hideLkBar(); }
 }
 window.addEventListener("resize", () => { if (!S.proj) return; applyView(); drawLinks(); scheduleX(); });
 
@@ -1493,12 +1758,12 @@ $("#linkCancel").onclick = cancelLink;
 function completeLink(id){
   const a = S.linkFrom; cancelLink(); if (!a || a === id) return;
   if (S.proj.links.some(L => !L.anchor && ((L.a === a && L.b === id) || (L.a === id && L.b === a)))){ toast("Bu iki kart zaten bağlı"); return; }
-  const L = { id:uid(), a, b:id, arrow:true }; S.proj.links.push(L); S.selLink = L.id; S.sel = null; cardEls.forEach(c => c.classList.remove("selected")); drawLinks(); commit();
+  const L = { id:uid(), a, b:id, arrow:true, ...(S.lastLinkColor ? { color:S.lastLinkColor } : {}), ...(S.lastLinkDash ? { dash:true } : {}) }; S.proj.links.push(L); selectLink(L.id); commit();
 }
 function completeAnchor(anchor){
   const a = S.linkFrom; cancelLink(); if (!a) return;
   if (S.proj.links.some(L => L.anchor && L.a === a && L.anchor.id === anchor.id)){ toast("Bu bağlantı zaten var"); return; }
-  S.proj.links.push({ id:uid(), a, anchor, to:"anchor" }); S.sel = a; renderWs(); renderAllOverlays(); commit(); toast("Kart belgedeki işarete bağlandı");
+  S.proj.links.push({ id:uid(), a, anchor, to:"anchor", ...(S.lastLinkColor ? { color:S.lastLinkColor } : {}), ...(S.lastLinkDash ? { dash:true } : {}) }); S.sel = a; renderWs(); renderAllOverlays(); commit(); toast("Kart belgedeki işarete bağlandı");
 }
 function removeLink(id){ S.proj.links = S.proj.links.filter(l => l.id !== id); S.selLink = null; if (prunePins()) renderAllOverlays(); renderWs(); commit(); toast("Bağlantı silindi", { label:"Geri al", fn:undo }); }
 /* jump to the other end of a document-to-document link, preferably in the other viewer */
@@ -1566,7 +1831,7 @@ $("#bFit").onclick = () => { fitAll(); save(); };
 el.ws.addEventListener("pointerdown", e => {
   if (e.pointerType === "pen" && !S.penOnly) setPenOnly(true, true);
   if (!["pen","hl","eraser","text"].includes(S.tool)) return;
-  if (e.target.closest(".hud,.link-hint,.lk-del,.spaces")) return;
+  if (e.target.closest(".hud,.link-hint,.lk-del,.lk-pt,.spaces,.wsfind")) return;
   if (S.tool === "text"){ if (e.target.closest(".card,.group")) return; e.stopPropagation(); e.preventDefault(); const pt = screenToPlane(e.clientX, e.clientY); addNote({ x:pt.x - 20, y:pt.y - 20 }); return; }
   if (e.pointerType === "touch" && S.penOnly) return;
   if (e.target.closest("textarea,input")) return;
@@ -1576,8 +1841,13 @@ el.ws.addEventListener("pointerdown", e => {
 }, true);
 const ptrs = new Map(); let pan = null, pinch = null;
 el.ws.addEventListener("pointerdown", e => {
-  if (e.target.closest(".card,.group,.hud,.lk-hit,.lk-del,.link-hint,.spaces")) return;
-  if (S.linkFrom) cancelLink();
+  if (e.target.closest(".card,.group,.hud,.lk-hit,.lk-del,.lk-pt,.link-hint,.spaces,.wsfind")) return;
+  if (S.linkFrom){
+    /* linking and tapped an empty spot: the link ends right there */
+    const from = S.linkFrom; cancelLink(); e.stopPropagation(); e.preventDefault();
+    const p = screenToPlane(e.clientX, e.clientY), L = { id:uid(), a:from, pt:{ x:r2(p.x), y:r2(p.y) }, heads:"end", ...(S.lastLinkColor ? { color:S.lastLinkColor } : {}), ...(S.lastLinkDash ? { dash:true } : {}) };
+    growSheet(p.x - 20, p.y - 20, p.x + 20, p.y + 20); S.proj.links.push(L); renderSheet(); selectLink(L.id); commit(); toast("Bağlantı masadaki noktada bitti. Ucunu sürükleyerek taşıyabilirsin."); return;
+  }
   S.sel = null; S.selLink = null; cardEls.forEach(c => c.classList.remove("selected")); drawLinks();
   if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
   el.ws.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, { x:e.clientX, y:e.clientY });
@@ -1740,7 +2010,7 @@ $("#mFolder").onclick = linkFolder;
 $("#mExport").onclick = () => { closePop(); exportZip(); };
 $("#mMd").onclick = () => { closePop(); exportMd(); };
 $("#mHelp").onclick = () => { closePop(); toast("V seç · P kalem · H fosforlu · E silgi · T metin · L kement · [ ] kalınlık · Shift düz çizgi · Ctrl+Z geri al · Ctrl+F tüm belgelerde ara · Boşluk oynat · Kartı başka karta sürükle: grup", null, 7000); };
-$("#bHome").onclick = async () => { if (Rec.active) await stopRecording(); clearTimeout(saveTimer); try { await saveNow(); } catch {} S.proj = null; setView("home"); };
+$("#bHome").onclick = async () => { if (Rec.active) await stopRecording(); clearTimeout(saveTimer); try { await saveNow(); } catch {} S.proj = null; setView("home"); OD.soon(600); };
 el.docTitle.addEventListener("click", () => {
   if (S.sample || el.docTitle.isContentEditable) return;
   el.docTitle.contentEditable = "true"; el.docTitle.focus();
@@ -1832,7 +2102,7 @@ async function exportMd(){
     const tx = p.texts.filter(t => t.doc === d.fp && t.text.trim()).sort((a, b) => a.page - b.page || a.y - b.y);
     if (!ex.length && !cm.length && !tx.length) continue;
     md += `## ${stripPdf(d.name)}\n\n`;
-    for (const it of ex) md += (it.type === "image" ? `*[Görsel alıntı]*` : `> ${it.text}`) + `\n\n*Sayfa ${it.page}*` + (it.note ? `\n\n${it.note}` : "") + "\n\n---\n\n";
+    for (const it of ex) md += (it.photo ? `*[Fotoğraf]*` : it.type === "image" ? `*[Görsel alıntı]*` : `> ${it.text}`) + (it.photo ? "" : `\n\n*Sayfa ${it.page}*`) + (it.note ? `\n\n${it.note}` : "") + (it.tags ? `\n\n${it.tags.map(t => "#" + t.replace(/\s/g, "_")).join(" ")}` : "") + "\n\n---\n\n";
     if (cm.length){ md += `### Yorumlar\n\n`; for (const c of cm) md += `- s. ${c.page}: "${(c.quote || "").slice(0, 80)}" ${c.text.replace(/\n/g, " ")}\n`; md += "\n"; }
     if (tx.length){ md += `### Belge üzerindeki notlar\n\n`; for (const t of tx) md += `- s. ${t.page}: ${t.text.replace(/\n/g, " ")}\n`; md += "\n"; }
   }
@@ -1941,6 +2211,45 @@ async function buildAnnotatedPdf(proj){
 
   /* 3. workspace layout (computed from data, 1 unit = 1 pt) */
   const QS = 11, QL = 15.5, NS = 10.5, NL = 14.5, HS = 8.5, PAD = 12;
+  /* formulas: MathJax SVG -> PNG, rendered once per formula */
+  const mathPng = new Map(), mathEmb = new Map();
+  const mathNotes = proj.items.filter(i => hasMath(i.note));
+  if (mathNotes.length){
+    try { await loadMathJax(); } catch {}
+    for (const it of mathNotes) for (const seg of parseMath(it.note)) if (seg.t === "math"){
+      const key = (seg.display ? "D|" : "I|") + seg.tex; if (mathPng.has(key) || !window.MathJax || !window.MathJax.tex2svg) continue;
+      try {
+        const node = window.MathJax.tex2svg(seg.tex, { display:seg.display }); if (node.querySelector("[data-mjx-error], merror")) continue;
+        const svg = node.querySelector("svg");
+        const wEx = parseFloat(svg.getAttribute("width")), hEx = parseFloat(svg.getAttribute("height")), va = parseFloat(String(svg.style.verticalAlign || "0").replace("ex", "")) || 0;
+        svg.setAttribute("width", wEx * 36); svg.setAttribute("height", hEx * 36); svg.setAttribute("color", "#1d1d1f"); svg.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+        const png = await pngBytesOf("data:image/svg+xml;charset=utf-8," + encodeURIComponent(new XMLSerializer().serializeToString(svg)));
+        mathPng.set(key, { bytes:png.bytes, wEx, hEx, va });
+      } catch (e){ console.warn("formül", seg.tex, e); }
+    }
+  }
+  /* lay out a note that mixes words and formulas into rows */
+  function mathFlow(text, f, size, lh, maxW){
+    const ex = size * 0.45, space = f.widthOfTextAtSize(" ", size), rows = []; let row = { items:[], w:0, asc:size * 0.8, desc:size * 0.25, center:false };
+    const push = () => { rows.push(row); row = { items:[], w:0, asc:size * 0.8, desc:size * 0.25, center:false }; };
+    const add = (item, w) => { if (row.items.length && row.w + w > maxW) push(); item.x = row.w; row.items.push(item); row.w += w; };
+    for (const seg of parseMath(text)){
+      if (seg.t === "text"){
+        const parts = safeTxt(seg.s).split(/(\n| )/);
+        for (const p of parts){ if (p === "\n"){ push(); continue; } if (p === " "){ if (row.items.length) row.w += space; continue; } if (!p) continue; add({ k:"w", s:p }, f.widthOfTextAtSize(p, size)); }
+        continue;
+      }
+      const m = mathPng.get((seg.display ? "D|" : "I|") + seg.tex);
+      if (!m){ add({ k:"w", s:safeTxt(seg.tex) }, f.widthOfTextAtSize(safeTxt(seg.tex), size)); continue; }
+      let w = m.wEx * ex, h = m.hEx * ex; if (w > maxW){ h *= maxW / w; w = maxW; }
+      const depth = -m.va * ex, item = { k:"m", key:(seg.display ? "D|" : "I|") + seg.tex, w, h, depth };
+      if (seg.display){ if (row.items.length) push(); add(item, w); row.center = true; row.asc = Math.max(row.asc, h - depth); row.desc = Math.max(row.desc, depth); push(); }
+      else { add(item, w); row.asc = Math.max(row.asc, h - depth); row.desc = Math.max(row.desc, depth); }
+    }
+    if (row.items.length) push();
+    let y = 0; for (const r of rows){ const rh = Math.max(lh, r.asc + r.desc + 3); r.base = y + (rh - r.asc - r.desc) / 2 + r.asc; r.top = y; y += rh; if (r.center){ const off = (maxW - r.w) / 2; r.items.forEach(i => i.x += off); } }
+    return { rows, h:y };
+  }
   const imgs = new Map();
   for (const it of proj.items) if (it.type === "image"){ try { imgs.set(it.id, await pngBytesOf(it.src)); } catch {} }
   function cardLayout(it, w){
@@ -1948,13 +2257,14 @@ async function buildAnnotatedPdf(proj){
     const inner = w - PAD * 2, parts = []; let h = PAD + 12;
     if (it.type === "excerpt"){ const lines = wrapText(it.text, cf, qs, inner - 8); parts.push({ k:"quote", lines, y:h + 6, s:qs, l:ql }); h += 8 + lines.length * ql; }
     if (it.type === "image"){ const im = imgs.get(it.id); const ih = im ? inner * im.h / im.w : 60; parts.push({ k:"img", y:h + 6, h:ih }); h += 10 + ih; }
-    if ((it.note || "").trim()){ const lines = wrapText(it.note, cf, ns, inner); parts.push({ k:"note", lines, y:h + 8, s:ns, l:nl }); h += 10 + lines.length * nl; }
+    if (hasMath(it.note) && mathPng.size){ const fl = mathFlow(it.note, cf, ns, nl, inner); parts.push({ k:"mnote", rows:fl.rows, y:h + 8, s:ns }); h += 10 + fl.h; }
+    else if ((it.note || "").trim()){ const lines = wrapText(it.note, cf, ns, inner); parts.push({ k:"note", lines, y:h + 8, s:ns, l:nl }); h += 10 + lines.length * nl; }
     return { h:h + PAD, parts };
   }
   const wsPages = [];
   for (const sp of proj.spaces){
     const items = proj.items.filter(i => i.space === sp.id), inks = proj.ink.filter(s => s.where === "ws" && s.space === sp.id);
-    if (!items.length && !inks.length) continue;
+    if (!items.length && !inks.length && !proj.links.some(l => l.at && l.at.space === sp.id)) continue;
     const boxes = new Map(), groups = [];
     for (const it of items) if (!it.group){ const lay = cardLayout(it, it.w); boxes.set(it.id, { it, x:it.x, y:it.y, w:it.w, h:lay.h, lay }); }
     for (const g of proj.groups.filter(g => g.space === sp.id)){
@@ -1966,6 +2276,8 @@ async function buildAnnotatedPdf(proj){
     let x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity; const grow = (a, b, c, d) => { x1 = Math.min(x1, a); y1 = Math.min(y1, b); x2 = Math.max(x2, c); y2 = Math.max(y2, d); };
     boxes.forEach(b => grow(b.x, b.y, b.x + b.w, b.y + b.h)); groups.forEach(b => grow(b.x, b.y, b.x + b.w, b.y + b.h));
     for (const st of inks) for (const q of st.pts) grow(q[0] - st.w, q[1] - st.w, q[0] + st.w, q[1] + st.w);
+    for (const l of proj.links) if (l.pt && boxes.has(l.a)) grow(l.pt.x - 10, l.pt.y - 10, l.pt.x + 10, l.pt.y + 10);
+    for (const l of proj.links) if (l.at && l.at.space === sp.id) grow(l.at.x - 14, l.at.y - 14, l.at.x + 14, l.at.y + 14);
     const sh = sp.sheet || { x:x1 - 40, y:y1 - 40, w:x2 - x1 + 80, h:y2 - y1 + 80 };
     let cx1 = Math.max(sh.x, x1 - 36), cy1 = Math.max(sh.y, y1 - 60), cx2 = Math.min(sh.x + sh.w, x2 + 36), cy2 = Math.min(sh.y + sh.h, y2 + 36);
     if (cx2 - cx1 < 595){ const add = 595 - (cx2 - cx1); cx2 = Math.min(sh.x + sh.w, cx2 + add); cx1 = Math.max(sh.x, cx2 - 595); }
@@ -2051,14 +2363,17 @@ async function buildAnnotatedPdf(proj){
     }
     /* card to card links (drawn under the cards) */
     for (const l of proj.links){
-      if (l.anchor) continue; const A = wp.boxes.get(l.a), B = wp.boxes.get(l.b); if (!A || !B) continue;
+      if (l.anchor || l.pins) continue; const A = wp.boxes.get(l.a), B = l.pt ? null : wp.boxes.get(l.b); if (!A || (!B && !l.pt)) continue;
       const bx = b => ({ x1:b.x, y1:b.y, x2:b.x + b.w, y2:b.y + b.h, cx:b.x + b.w / 2, cy:b.y + b.h / 2 });
-      const { d } = linkCurve(bx(A), bx(B)); svg(d, { borderColor:rgb(.55, .55, .57), borderWidth:1.2 });
-      if (l.arrow){
-        const m = d.match(/([-\d.]+),([-\d.]+) ([-\d.]+),([-\d.]+)$/); if (m){ const [ax, ay, ex, ey] = m.slice(1).map(Number), ang = Math.atan2(ey - ay, ex - ax) || 0, s = 9;
-          const p1 = [ex - s * Math.cos(ang - 0.42), ey - s * Math.sin(ang - 0.42)], p2 = [ex - s * Math.cos(ang + 0.42), ey - s * Math.sin(ang + 0.42)];
-          svg(`M${ex},${ey} L${p1[0]},${p1[1]} L${p2[0]},${p2[1]} Z`, { color:rgb(.55, .55, .57) }); }
-      }
+      const col = l.color && LINK_COLORS[l.color] ? rgb(...hexRgb(LINK_COLORS[l.color])) : rgb(.55, .55, .57), hd = linkHeads(l);
+      const { d } = linkCurve(bx(A), l.pt ? pointBox(l.pt) : bx(B)); svg(d, { borderColor:col, borderWidth:l.color ? 1.6 : 1.2, ...(l.dash ? { borderDashArray:[6, 4] } : {}) });
+      const m = d.match(/^M([-\d.]+),([-\d.]+) C([-\d.]+),([-\d.]+) ([-\d.]+),([-\d.]+) ([-\d.]+),([-\d.]+)$/);
+      const head = (ax, ay, ex, ey) => { const ang = Math.atan2(ey - ay, ex - ax) || 0, s = 9, p1 = [ex - s * Math.cos(ang - 0.42), ey - s * Math.sin(ang - 0.42)], p2 = [ex - s * Math.cos(ang + 0.42), ey - s * Math.sin(ang + 0.42)];
+        svg(`M${ex},${ey} L${p1[0]},${p1[1]} L${p2[0]},${p2[1]} Z`, { color:col }); };
+      if (m){ const v = m.slice(1).map(Number);
+        if (hd === "end" || hd === "both") head(v[4], v[5], v[6], v[7]);
+        if (hd === "start" || hd === "both") head(v[2], v[3], v[0], v[1]);
+        if (l.pt && hd !== "end" && hd !== "both") svg(`M${l.pt.x - 2.5},${l.pt.y} a2.5,2.5 0 1,0 5,0 a2.5,2.5 0 1,0 -5,0`, { color:col }); }
     }
     /* cards */
     for (const b of wp.boxes.values()){
@@ -2069,9 +2384,9 @@ async function buildAnnotatedPdf(proj){
       svg(`M${x},${y + 9} Q${x},${y} ${x + 9},${y} H${x + w - 9} Q${x + w},${y} ${x + w},${y + 9} V${y + PAD + 15} H${x} Z`, { color:dotCol, opacity:0.24 });
       if (frame === "none") svg(rr(x, y, w, h, 9), { borderColor:HAIR, borderWidth:0.7 });
       else svg(rr(x, y, w, h, 9), { borderColor:dotCol, borderWidth:frame === "thick" ? 4.5 : 2.2, borderOpacity:0.8 });
-      const label = it.type === "note" ? "NOT" : `${it.type === "image" ? "Görsel · " : ""}${proj.docs.length > 1 ? trunc(stripPdf((proj.docs.find(dd => dd.fp === it.doc) || {}).name || ""), 30) + " · " : ""}s. ${it.page}`;
+      const label = it.type === "note" ? "NOT" : it.photo ? "FOTOĞRAF" : `${it.type === "image" ? "Görsel · " : ""}${proj.docs.length > 1 ? trunc(stripPdf((proj.docs.find(dd => dd.fp === it.doc) || {}).name || ""), 30) + " · " : ""}s. ${it.page}`;
       page.drawText(safeTxt(label), { x:X(x + PAD), y:Y(y + PAD + 7), size:HS * k, font, color:INK2 });
-      if (it.doc && hasPage(it.doc, it.page)){
+      if (it.doc && !it.photo && hasPage(it.doc, it.page)){
         const tgt = pagesOf.get(it.doc)[it.page - 1], r0 = it.rects[0], top = r0 ? boxPdf(it.doc, it.page, r0)[3] + 40 : tgt.getHeight();
         linkAnnot(page, [X(x + PAD), Y(y + PAD + 12), X(x + PAD) + font.widthOfTextAtSize(safeTxt(label), HS * k), Y(y + PAD - 2)], dest(tgt, 0, Math.min(tgt.getHeight(), top)));
       }
@@ -2081,6 +2396,11 @@ async function buildAnnotatedPdf(proj){
           part.lines.forEach((ln, i) => drawTxt(page, ln, { x:X(x + PAD + 9), y:Y(y + part.y + (i + 1) * part.l - 4), size:part.s * k, font:fontFor(it.font), color:INK }));
         }
         if (part.k === "img"){ const im = imgs.get(it.id); if (im){ const emb = await out.embedPng(im.bytes); page.drawImage(emb, { x:X(x + PAD), y:Y(y + part.y + part.h), width:(w - PAD * 2) * k, height:part.h * k }); } }
+        if (part.k === "mnote") for (const row of part.rows) for (const item of row.items){
+          if (item.k === "w") drawTxt(page, item.s, { x:X(x + PAD + item.x), y:Y(y + part.y + row.base), size:part.s * k, font:fontFor(it.font), color:it.type === "note" ? INK : INK2 });
+          else { let e = mathEmb.get(item.key); if (!e){ e = await out.embedPng(mathPng.get(item.key).bytes); mathEmb.set(item.key, e); }
+            page.drawImage(e, { x:X(x + PAD + item.x), y:Y(y + part.y + row.base + item.depth), width:item.w * k, height:item.h * k }); }
+        }
         if (part.k === "note") part.lines.forEach((ln, i) => drawTxt(page, ln, { x:X(x + PAD), y:Y(y + part.y + (i + 1) * part.l - 3), size:part.s * k, font:fontFor(it.font), color:it.type === "note" ? INK : INK2 }));
       }
       wp.boxes.get(it.id).page = page;
@@ -2112,6 +2432,15 @@ async function buildAnnotatedPdf(proj){
     const n = ++nn, pa = pagesOf.get(A.doc)[A.page - 1], pb = pagesOf.get(B.doc)[B.page - 1], [ax, ay] = P(A.doc, A.page, A.x, A.y), [bx, by] = P(B.doc, B.page, B.x, B.y);
     const ra = badge(pa, ax, ay, n), rb2 = badge(pb, bx, by, n);
     linkAnnot(pa, ra, dest(pb, bx - 60, Math.min(pb.getHeight(), by + 80))); linkAnnot(pb, rb2, dest(pa, ax - 60, Math.min(pa.getHeight(), ay + 80)));
+  }
+
+  /* 6c. book to workspace point: the same number at both places */
+  for (const L of proj.links){
+    if (!L.pin) continue;
+    const A = proj.pins.find(n => n.id === L.pin), wp = wsPages.find(w => w.sp.id === L.at.space); if (!A || !wp || !hasPage(A.doc, A.page)) continue;
+    const n = ++nn, pa = pagesOf.get(A.doc)[A.page - 1], [ax, ay] = P(A.doc, A.page, A.x, A.y), wx = (L.at.x - wp.cx1) * wp.k, wy = wp.H - (L.at.y - wp.cy1) * wp.k;
+    const ra = badge(pa, ax, ay, n), rw = badge(wp.page, wx, wy, n);
+    linkAnnot(pa, ra, dest(wp.page, wx - 120, Math.min(wp.H, wy + 120))); linkAnnot(wp.page, rw, dest(pa, ax - 60, Math.min(pa.getHeight(), ay + 80)));
   }
 
   /* 7. outline (bookmarks panel) and metadata */
@@ -2175,6 +2504,8 @@ function fitSheetToContent(q, sp){
   if (x2 > sh.x + sh.w) sh.w = Math.ceil(x2 + m - sh.x);
   if (y2 > sh.y + sh.h) sh.h = Math.ceil(y2 + m - sh.y);
 }
+function linkLook(l){ return { ...(LINK_COLORS[l.color] ? { color:l.color } : {}), ...(HEADS.includes(l.heads) ? { heads:l.heads } : {}), ...(l.dash ? { dash:true } : {}) }; }
+function cleanTags(t){ if (!Array.isArray(t)) return {}; const out = [...new Set(t.map(normTag).filter(Boolean))].slice(0, 30); return out.length ? { tags:out } : {}; }
 function cleanProject(p){
   const q = emptyProject(p.name);
   q.id = String(p.id || q.id); q.name = String(p.name || "Proje");
@@ -2191,7 +2522,7 @@ function cleanProject(p){
     space:sids.has(i.space) ? i.space : s0, color:HL_COLORS.includes(i.color) ? i.color : "y", x:+i.x || 0, y:+i.y || 0, w:clamp(+i.w || 240, 170, 900),
     ...(isFinite(i.fs) && +i.fs !== 1 ? { fs:clamp(+i.fs, 0.7, 3) } : {}),
     ...(PAPER_COLORS[i.bg] && i.bg !== "white" ? { bg:i.bg } : {}), ...(FRAMES[i.frame] && i.frame !== "thin" ? { frame:i.frame } : {}), ...(FONT_IDS.has(i.font) ? { font:i.font } : {}),
-    ...(gids.has(i.group) ? { group:i.group, ord:+i.ord || 0 } : {}), ...recOf(i) }));
+    ...(gids.has(i.group) ? { group:i.group, ord:+i.ord || 0 } : {}), ...cleanTags(i.tags), ...(i.type === "image" && i.photo ? { photo:true } : {}), ...recOf(i) }));
   const ids = new Set(q.items.map(i => i.id));
   q.ink = (p.ink || []).filter(s => s && Array.isArray(s.pts) && s.pts.length && ((s.where === "pdf" && fps.has(s.doc)) || s.where === "ws")).map(s => ({
     id:String(s.id || uid()), where:s.where, ...(s.where === "pdf" ? { doc:s.doc, page:+s.page || 1 } : { space:sids.has(s.space) ? s.space : s0 }), kind:s.kind === "hl" ? "hl" : "pen",
@@ -2203,11 +2534,14 @@ function cleanProject(p){
   q.bookmarks = (p.bookmarks || []).filter(b => b && fps.has(b.doc)).map(b => ({ id:String(b.id || uid()), doc:b.doc, page:+b.page || 1, title:String(b.title || "Yer imi") }));
   const anchorIds = new Set([...q.ink, ...q.texts, ...q.comments, ...q.pins].map(o => o.id)), pinIds = new Set(q.pins.map(n => n.id));
   const docLinks = (p.links || []).filter(l => l && Array.isArray(l.pins) && l.pins.length === 2 && l.pins.every(id => pinIds.has(id)) && l.pins[0] !== l.pins[1])
-    .map(l => ({ id:String(l.id || uid()), pins:[l.pins[0], l.pins[1]], arrow:l.arrow !== false }));
-  q.links = (p.links || []).filter(l => l && !l.pins && ids.has(l.a) && (l.anchor ? anchorIds.has(l.anchor.id) && ["ink","text","comment","pin"].includes(l.anchor.type) : ids.has(l.b))).map(l => l.anchor
-    ? { id:String(l.id || uid()), a:l.a, anchor:{ type:l.anchor.type, id:l.anchor.id }, ...(l.to === "card" || l.to === "anchor" ? { to:l.to } : {}) }
-    : { id:String(l.id || uid()), a:l.a, b:l.b, ...(l.arrow ? { arrow:true } : {}) });
+    .map(l => ({ id:String(l.id || uid()), pins:[l.pins[0], l.pins[1]], arrow:l.arrow !== false, ...linkLook(l) }));
+  q.links = (p.links || []).filter(l => l && !l.pins && ids.has(l.a) && (l.anchor ? anchorIds.has(l.anchor.id) && ["ink","text","comment","pin"].includes(l.anchor.type) : l.pt ? isFinite(l.pt.x) && isFinite(l.pt.y) : ids.has(l.b))).map(l => l.anchor
+    ? { id:String(l.id || uid()), a:l.a, anchor:{ type:l.anchor.type, id:l.anchor.id }, ...(l.to === "card" || l.to === "anchor" ? { to:l.to } : {}), ...linkLook(l) }
+    : l.pt ? { id:String(l.id || uid()), a:l.a, pt:{ x:+l.pt.x, y:+l.pt.y }, ...linkLook(l) }
+    : { id:String(l.id || uid()), a:l.a, b:l.b, ...(l.arrow ? { arrow:true } : {}), ...linkLook(l) });
   q.links.push(...docLinks);
+  q.links.push(...(p.links || []).filter(l => l && typeof l.pin === "string" && pinIds.has(l.pin) && l.at && sids.has(l.at.space) && isFinite(l.at.x) && isFinite(l.at.y))
+    .map(l => ({ id:String(l.id || uid()), pin:l.pin, at:{ space:l.at.space, x:+l.at.x, y:+l.at.y }, ...linkLook(l) })));
   q.pins = q.pins.filter(n => pinUsed(q.links, n.id));
   q.recs = (p.recs || []).filter(r => r && typeof r.id === "string").map(r => ({ id:r.id, title:String(r.title || "Kayıt"), doc:fps.has(r.doc) ? r.doc : (q.docs[0] && q.docs[0].fp), page:+r.page || 1, startedAt:r.startedAt || new Date().toISOString(), dur:+r.dur || 0, mime:String(r.mime || "audio/webm"), mode:r.mode === "keep" ? "keep" : "trace" }));
   for (const sp of q.spaces) fitSheetToContent(q, sp);
@@ -2216,7 +2550,7 @@ function cleanProject(p){
 }
 async function openProject(data, opts = {}){
   if (Rec.active) await stopRecording();
-  closePlayer(); closePop(); hideBanner(); toggleSearch(false); textCache.clear();
+  closePlayer(); closePop(); hideBanner(); toggleSearch(false); textCache.clear(); if (WF.open) closeWsFind(); closeExam();
   const proj = cleanProject(data);
   if (!proj.docs.length){ toast("Projede belge yok."); return; }
   S.proj = proj; S.sample = !!opts.sample; S.space = proj.ui.space; S.sel = null; S.selLink = null; cancelLink();
@@ -2293,11 +2627,8 @@ async function renderHome(){
     const ex2 = document.createElement("button"); ex2.className = "icon-btn sm"; ex2.title = "Dışa aktar (.ednote)"; ex2.setAttribute("aria-label", ex2.title); ex2.innerHTML = ICON.download; ex2.onclick = () => exportZip(r.id);
     const del = document.createElement("button"); del.className = "icon-btn sm"; del.title = "Bu cihazdan sil"; del.setAttribute("aria-label", del.title); del.innerHTML = ICON.del;
     del.onclick = async () => {
-      if (!del.dataset.arm){ del.dataset.arm = "1"; del.style.color = "var(--rec)"; toast("Silmek için tekrar dokun. Proje ve notları bu cihazdan kaldırılır."); setTimeout(() => { delete del.dataset.arm; del.style.color = ""; }, 4000); return; }
-      for (const x of d.recs || []) await DB.del("blobs", x.id).catch(() => {});
-      const others = projs.filter(o => o.id !== r.id).flatMap(o => ((o.data && o.data.docs) || []).map(z => z.fp));
-      for (const z of d.docs || []) if (!others.includes(z.fp)) await DB.del("pdfs", z.fp).catch(() => {});
-      await DB.del("projects", r.id).catch(() => {}); await DB.del("meta", "dir:" + r.id).catch(() => {}); renderHome();
+      if (!del.dataset.arm){ del.dataset.arm = "1"; del.style.color = "var(--rec)"; toast(OD.enabled() && OD._st.auth ? "Silmek için tekrar dokun. Proje bu cihazdan ve OneDrive'dan kaldırılır." : "Silmek için tekrar dokun. Proje ve notları bu cihazdan kaldırılır."); setTimeout(() => { delete del.dataset.arm; del.style.color = ""; }, 4000); return; }
+      await deleteLocalProject(r.id); await OD.forget(r.id); renderHome();
     };
     acts.append(ex2, del); li.append(main, acts); el.recent.appendChild(li);
   }
@@ -2326,6 +2657,508 @@ document.addEventListener("keydown", e => {
   if (e.key === "Escape"){ closePop(); cancelLink(); hideChip(); select(null); }
   else if (e.key === "Delete" || e.key === "Backspace"){ if (S.selLink){ e.preventDefault(); removeLink(S.selLink); } else if (S.sel){ e.preventDefault(); removeItem(S.sel); } }
 });
+
+/* ================= tags ================= */
+const normTag = t => String(t || "").trim().replace(/^#+/, "").replace(/\s+/g, " ").slice(0, 40);
+const allTags = () => { const m = new Map(); for (const i of S.proj.items) for (const t of i.tags || []) m.set(t, (m.get(t) || 0) + 1); return [...m.entries()].sort((a, b) => a[0].localeCompare(b[0], "tr")); };
+function setTags(it, set){ if (set.size) it.tags = [...set]; else delete it.tags; renderWs(); if (WF.open) runWsFind(true); commit(); }
+function openTagPop(id, anchor){
+  const it = itemById(id); if (!it) return;
+  const pop = $("#tagPop"), box = $("#tagChips"), inp = $("#tagNew");
+  const draw = () => {
+    box.innerHTML = ""; const tags = allTags(), mine = new Set(it.tags || []);
+    for (const [t, n] of tags){ const b = document.createElement("button"); b.className = "tchip" + (mine.has(t) ? " on" : ""); b.setAttribute("aria-pressed", String(mine.has(t)));
+      b.innerHTML = `<span></span><small>${n}</small>`; b.firstChild.textContent = "#" + t;
+      b.onclick = () => { const s = new Set(it.tags || []); s.has(t) ? s.delete(t) : s.add(t); setTags(it, s); draw(); }; box.appendChild(b); }
+    $("#tagEmpty").hidden = tags.length > 0;
+  };
+  inp.value = "";
+  inp.onkeydown = e => {
+    if (e.key === "Enter"){ e.preventDefault(); const t = normTag(inp.value); if (!t) return; const s = new Set(it.tags || []); s.add(t); inp.value = ""; setTags(it, s); draw(); }
+    else if (e.key === "Escape"){ e.preventDefault(); closePop(); }
+  };
+  draw(); openPop(pop, anchor);
+  if (!matchMedia("(pointer:coarse)").matches) inp.focus();
+}
+
+/* ================= workspace search and tag filter ================= */
+const WF = { open:false, q:"", tags:new Set(), hits:[], idx:-1 };
+const wfActive = () => WF.open && !!(WF.q || WF.tags.size);
+function wfMatch(i){
+  if (WF.tags.size && !(i.tags && [...WF.tags].every(t => i.tags.includes(t)))) return false;
+  if (!WF.q) return true;
+  const hay = ((i.text || "") + " " + (i.note || "") + " " + (i.tags || []).map(t => "#" + t).join(" ") + (i.photo ? " fotoğraf" : "")).toLocaleLowerCase("tr");
+  return WF.q.split(/\s+/).every(w => hay.includes(w));
+}
+function openWsFind(o = {}){
+  if (isNarrow()) setTab("ws");
+  WF.open = true; $("#wsFind").hidden = false; el.ws.classList.add("finding");
+  if (o.tag){ WF.tags = new Set([o.tag]); $("#wsQ").value = ""; }
+  runWsFind();
+  if (!o.tag && !matchMedia("(pointer:coarse)").matches) $("#wsQ").focus();
+  if (o.tag && WF.hits.length) wfGo(1);
+}
+function closeWsFind(){ WF.open = false; WF.tags.clear(); WF.hits = []; WF.idx = -1; $("#wsQ").value = ""; $("#wsFind").hidden = true; el.ws.classList.remove("finding"); applyWsFilter(); }
+function runWsFind(keep){
+  if (!S.proj) return;
+  WF.q = $("#wsQ").value.trim().toLocaleLowerCase("tr");
+  for (const t of [...WF.tags]) if (!S.proj.items.some(i => i.tags && i.tags.includes(t))) WF.tags.delete(t);
+  const order = new Map(S.proj.spaces.map((s, k) => [s.id, k])), prev = WF.hits[WF.idx];
+  WF.hits = wfActive() ? S.proj.items.filter(wfMatch).sort((a, b) => (order.get(a.space) - order.get(b.space)) || (a.y - b.y) || (a.x - b.x)).map(i => i.id) : [];
+  WF.idx = keep && prev ? WF.hits.indexOf(prev) : -1;
+  drawWfTags(); applyWsFilter();
+}
+function drawWfTags(){
+  const box = $("#wsTags"); box.innerHTML = ""; const tags = allTags(); box.hidden = !tags.length;
+  for (const [t, n] of tags){ const b = document.createElement("button"); b.className = "tchip" + (WF.tags.has(t) ? " on" : ""); b.setAttribute("aria-pressed", String(WF.tags.has(t)));
+    b.innerHTML = `<span></span><small>${n}</small>`; b.firstChild.textContent = "#" + t;
+    b.onclick = () => { WF.tags.has(t) ? WF.tags.delete(t) : WF.tags.add(t); runWsFind(); if (WF.hits.length && !WF.hits.some(id => (itemById(id) || {}).space === S.space)) wfGo(1); }; box.appendChild(b); }
+}
+function applyWsFilter(){
+  if (!S.proj) return;
+  const on = wfActive(), hit = new Set(WF.hits), cur = WF.hits[WF.idx];
+  cardEls.forEach((c, id) => { c.classList.toggle("dim", on && !hit.has(id)); c.classList.toggle("found", on && hit.has(id)); c.classList.toggle("cur-hit", on && cur === id); });
+  el.plane.querySelectorAll(".group").forEach(g => g.classList.toggle("dim", on && !g.querySelector(".card.found")));
+  el.ws.classList.toggle("filtering", on);
+  const cnt = $("#wsCount"); if (!cnt) return;
+  if (!on){ cnt.textContent = ""; return; }
+  const here = WF.hits.filter(id => (itemById(id) || {}).space === S.space).length, other = WF.hits.length - here;
+  cnt.textContent = !WF.hits.length ? "Sonuç yok" : (WF.idx >= 0 ? `${WF.idx + 1} / ${WF.hits.length}` : `${WF.hits.length} kart`) + (other ? ` · ${other} diğer masada` : "");
+}
+function wfGo(d){
+  if (!WF.hits.length) return;
+  WF.idx = WF.idx < 0 ? (d > 0 ? 0 : WF.hits.length - 1) : (WF.idx + d + WF.hits.length) % WF.hits.length;
+  const it = itemById(WF.hits[WF.idx]); if (!it) return;
+  if (it.space !== S.space) switchSpace(it.space);
+  applyWsFilter(); centerCard(it.id);
+}
+function centerCard(id){
+  requestAnimationFrame(() => {
+    let c = cardEls.get(id); if (!c) return; if (!c.offsetParent || !c.offsetWidth) c = c.closest(".group") || c;
+    const cr = c.getBoundingClientRect(), wr = el.ws.getBoundingClientRect(), v = view();
+    v.tx += (wr.left + wr.width / 2) - (cr.left + cr.width / 2); v.ty += (wr.top + wr.height / 2 + 30) - (cr.top + Math.min(cr.height, wr.height - 160) / 2);
+    applyView(); drawLinks(); save();
+  });
+}
+$("#bWsFind").onclick = () => WF.open ? closeWsFind() : openWsFind();
+$("#wsClose").onclick = closeWsFind;
+$("#wsPrev").onclick = () => wfGo(-1); $("#wsNext").onclick = () => wfGo(1);
+$("#wsQ").addEventListener("input", () => runWsFind());
+$("#wsQ").addEventListener("keydown", e => { if (e.key === "Enter"){ e.preventDefault(); wfGo(e.shiftKey ? -1 : 1); } else if (e.key === "Escape"){ e.preventDefault(); closeWsFind(); } });
+$("#wsExam").onclick = () => openExam();
+for (const ev of ["pointerdown", "wheel", "dblclick"]) $("#wsFind").addEventListener(ev, e => e.stopPropagation(), { passive:true });
+
+/* ================= exam mode: cards as flashcards ================= */
+const EX = { ids:[], queue:[], cur:null, flipped:false, missed:new Set(), firstTry:0, done:0, first:"note", title:"" };
+function examSides(it, first){
+  const note = (it.note || "").trim();
+  if (it.type === "note"){
+    const parts = note.split(/\n\s*-{3,}\s*\n/);
+    if (parts.length > 1) return { q:{ t:"text", s:parts[0] }, a:{ t:"text", s:parts.slice(1).join("\n") } };
+    const lines = note.split("\n"), head = lines[0].trim(), rest = lines.slice(1).join("\n").trim();
+    if (head && rest) return { q:{ t:"text", s:head }, a:{ t:"text", s:rest } };
+    return { q:{ t:"text", s:note }, a:null };
+  }
+  const main = it.type === "image" ? { t:"img", src:it.src } : { t:"quote", s:it.text };
+  if (!note) return { q:main, a:null };
+  const n = { t:"text", s:note };
+  return first === "note" ? { q:n, a:main } : { q:main, a:n };
+}
+function examFill(box, side, it){
+  box.innerHTML = ""; box.style.fontFamily = it.font ? fontCss(it.font) : "";
+  if (side.t === "img"){ const im = document.createElement("img"); im.src = side.src; im.alt = ""; box.appendChild(im); return; }
+  const d = document.createElement("div"); d.className = side.t === "quote" ? "ex-quote" : "ex-text";
+  if (side.t === "quote") d.textContent = side.s; else renderMathInto(d, side.s);
+  box.appendChild(d);
+}
+function openExam(){
+  if (!S.proj) return; closePop();
+  const pool = wfActive() ? WF.hits.map(itemById).filter(Boolean) : spaceItems();
+  const usable = pool.filter(i => (i.note || "").trim() || i.type !== "note");
+  if (!usable.length){ toast(wfActive() ? "Bulunan kartlarda çalışılacak bir şey yok." : "Bu masada kart yok."); return; }
+  EX.ids = usable.map(i => i.id);
+  EX.title = wfActive() ? ([...WF.tags].map(t => "#" + t).join(" ") || "Arama sonuçları") : curSpace().name;
+  $("#exSetupTitle").textContent = EX.title;
+  const two = usable.filter(i => examSides(i, "note").a).length;
+  $("#exInfo").textContent = `${usable.length} kart` + (two ? `, ${two} tanesinin arka yüzü var` : "") + ".";
+  $("#exFirst").querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.f === EX.first)));
+  $("#exSetup").hidden = false; $("#exCard").hidden = true; $("#exEnd").hidden = true; $("#exActs").hidden = true;
+  $("#exProg").textContent = ""; $("#exBar").style.width = "0";
+  $("#exam").hidden = false; document.body.classList.add("examining");
+  $("#exStart").focus();
+}
+function startExam(ids){
+  EX.queue = [...ids]; if ($("#exShuffle").checked) for (let i = EX.queue.length - 1; i > 0; i--){ const j = Math.floor(Math.random() * (i + 1)); [EX.queue[i], EX.queue[j]] = [EX.queue[j], EX.queue[i]]; }
+  EX.total = EX.queue.length; EX.missed = new Set(); EX.firstTry = 0; EX.done = 0;
+  $("#exSetup").hidden = true; $("#exEnd").hidden = true; $("#exCard").hidden = false; $("#exActs").hidden = false;
+  nextExamCard();
+}
+function nextExamCard(){
+  $("#exProg").textContent = `${Math.min(EX.done + 1, EX.total)} / ${EX.total}`; $("#exBar").style.width = (EX.done / EX.total * 100) + "%";
+  if (!EX.queue.length){ endExam(); return; }
+  const it = itemById(EX.queue[0]); if (!it){ EX.queue.shift(); nextExamCard(); return; }
+  EX.cur = it; EX.flipped = false;
+  const { q, a } = examSides(it, EX.first);
+  const meta = it.photo ? "Fotoğraf" : it.type === "note" ? "Not" : (S.proj.docs.length > 1 ? docName(it.doc).slice(0, 40) + " · " : "") + "s. " + it.page;
+  $("#exMeta").textContent = meta + (it.tags ? "  " + it.tags.map(t => "#" + t).join(" ") : "") + (EX.missed.has(it.id) ? "  · tekrar" : "");
+  $("#exCard").dataset.color = it.color;
+  examFill($("#exFront"), q, it);
+  if (a){ examFill($("#exBack"), a, it); } else $("#exBack").innerHTML = "";
+  $("#exBack").hidden = true; $("#exCard").classList.toggle("single", !a);
+  $("#exShow").hidden = !a; $("#exAgain").hidden = !!a; $("#exKnow").hidden = !!a;
+  (a ? $("#exShow") : $("#exKnow")).focus({ preventScroll:true });
+}
+function flipExam(){ if (EX.flipped || !EX.cur) return; EX.flipped = true; $("#exBack").hidden = false; $("#exShow").hidden = true; $("#exAgain").hidden = false; $("#exKnow").hidden = false; $("#exKnow").focus({ preventScroll:true }); }
+function answerExam(ok){
+  const id = EX.queue.shift(); if (!id) return;
+  if (ok){ if (!EX.missed.has(id)) EX.firstTry++; EX.done++; }
+  else { EX.missed.add(id); EX.queue.splice(Math.min(EX.queue.length, 3 + Math.floor(Math.random() * 3)), 0, id); }
+  nextExamCard();
+}
+function endExam(){
+  $("#exCard").hidden = true; $("#exActs").hidden = true; $("#exEnd").hidden = false; $("#exBar").style.width = "100%"; $("#exProg").textContent = "";
+  $("#exResult").textContent = `${EX.total} kartın ${EX.firstTry} tanesini ilk seferde bildin.` + (EX.missed.size ? ` ${EX.missed.size} kartta zorlandın.` : " Hepsini ilk seferde bildin.");
+  $("#exRetry").hidden = !EX.missed.size; (EX.missed.size ? $("#exRetry") : $("#exDone")).focus();
+}
+function closeExam(){ $("#exam").hidden = true; document.body.classList.remove("examining"); EX.cur = null; }
+$("#exFirst").querySelectorAll("button").forEach(b => b.onclick = () => { EX.first = b.dataset.f; $("#exFirst").querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", String(x === b))); });
+$("#exStart").onclick = () => startExam(EX.ids);
+$("#exShow").onclick = flipExam; $("#exAgain").onclick = () => answerExam(false); $("#exKnow").onclick = () => answerExam(true);
+$("#exRetry").onclick = () => startExam([...EX.missed]); $("#exRestart").onclick = () => startExam(EX.ids);
+$("#exDone").onclick = closeExam; $("#exClose").onclick = closeExam;
+$("#exCard").addEventListener("click", e => { if (!e.target.closest("button")) flipExam(); });
+$("#mExam").onclick = () => openExam();
+document.addEventListener("keydown", e => {
+  if ($("#exam").hidden) return;
+  e.stopImmediatePropagation();
+  if (e.key === "Escape"){ e.preventDefault(); closeExam(); return; }
+  if ($("#exCard").hidden || e.ctrlKey || e.metaKey || e.altKey) return;
+  if (e.key === " " || e.key === "Enter"){ e.preventDefault(); if (!EX.flipped && EX.cur && !$("#exShow").hidden) flipExam(); else if (e.key === "Enter" && document.activeElement && document.activeElement.tagName === "BUTTON") document.activeElement.click(); return; }
+  if (e.key === "1" && !$("#exAgain").hidden){ e.preventDefault(); answerExam(false); }
+  if (e.key === "2" && !$("#exKnow").hidden){ e.preventDefault(); answerExam(true); }
+}, true);
+
+/* ================= photos (from camera or gallery; during a recording they are tied to that moment) ================= */
+async function downscaleImage(file, max, q){
+  const url = URL.createObjectURL(file);
+  try {
+    const img = new Image(); img.src = url; await img.decode();
+    const k = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight)), c = document.createElement("canvas");
+    c.width = Math.round(img.naturalWidth * k); c.height = Math.round(img.naturalHeight * k);
+    const ctx = c.getContext("2d"); ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, c.width, c.height); ctx.drawImage(img, 0, 0, c.width, c.height);
+    return { src:c.toDataURL("image/jpeg", q), w:c.width, h:c.height };
+  } finally { URL.revokeObjectURL(url); }
+}
+function addPhoto({ src, w:iw, h:ih }){
+  const v = AV(), fp = (v && v.fp) || (S.proj.docs[0] && S.proj.docs[0].fp);
+  const p = defaultSpot({ w:300, h:Math.round(272 * ih / iw) + 90 });
+  const it = stamp({ id:uid(), type:"image", photo:true, src, doc:fp, page:v && v.fp === fp ? v.curPage : 1, rects:[], space:S.space, color:S.lastColor, note:"", w:300, x:p.x, y:p.y });
+  if (S.lastBg && S.lastBg !== "white") it.bg = S.lastBg; if (S.lastFrame && S.lastFrame !== "thin") it.frame = S.lastFrame; if (S.lastFont) it.font = S.lastFont;
+  S.proj.items.push(it); S.sel = it.id; renderWs(); commit(); showCardIfHidden(it.id);
+  toast(it.rec ? "Fotoğraf kaydın bu anına bağlandı" : "Fotoğraf masaya eklendi");
+}
+/* on a laptop the file picker cannot take a photo, so the camera opens here; phones use their own camera screen */
+const CAM = { stream:null };
+async function openCamera(){
+  if (matchMedia("(pointer:coarse)").matches || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){ $("#filePhoto").click(); return; }
+  $("#cam").hidden = false; $("#camErr").hidden = true; $("#camShot").disabled = true; $("#camVideo").hidden = false;
+  try {
+    CAM.stream = await navigator.mediaDevices.getUserMedia({ video:{ facingMode:{ ideal:"environment" }, width:{ ideal:1920 }, height:{ ideal:1080 } }, audio:false });
+    if ($("#cam").hidden){ closeCamera(); return; }
+    const v = $("#camVideo"); v.srcObject = CAM.stream; await v.play(); $("#camShot").disabled = false; $("#camShot").focus();
+  } catch (e){
+    $("#camVideo").hidden = true;
+    $("#camErr").textContent = e && e.name === "NotAllowedError" ? "Kamera izni verilmedi. Adres çubuğundaki kamera simgesinden izin verebilir ya da fotoğrafı dosyadan seçebilirsin." : "Kamera bulunamadı ya da başka bir uygulama kullanıyor. Fotoğrafı dosyadan seçebilirsin.";
+    $("#camErr").hidden = false;
+  }
+}
+function closeCamera(){ if (CAM.stream){ CAM.stream.getTracks().forEach(t => t.stop()); CAM.stream = null; } $("#camVideo").srcObject = null; $("#cam").hidden = true; }
+$("#camShot").onclick = () => {
+  const v = $("#camVideo"), w = v.videoWidth, h = v.videoHeight; if (!w || !S.proj) return;
+  const k = Math.min(1, 1600 / Math.max(w, h)), c = document.createElement("canvas"); c.width = Math.round(w * k); c.height = Math.round(h * k);
+  c.getContext("2d").drawImage(v, 0, 0, c.width, c.height);
+  $("#cam").classList.add("flash"); setTimeout(() => $("#cam").classList.remove("flash"), 180);
+  addPhoto({ src:c.toDataURL("image/jpeg", 0.85), w:c.width, h:c.height }); setTimeout(closeCamera, 200);
+};
+$("#camFile").onclick = () => { closeCamera(); $("#filePhoto").click(); };
+$("#camClose").onclick = closeCamera;
+document.addEventListener("keydown", e => {
+  if ($("#cam").hidden) return; e.stopImmediatePropagation();
+  if (e.key === "Escape"){ e.preventDefault(); closeCamera(); } else if ((e.key === " " || e.key === "Enter") && !$("#camShot").disabled && document.activeElement !== $("#camFile") && document.activeElement !== $("#camClose")){ e.preventDefault(); $("#camShot").click(); }
+}, true);
+$("#bPhoto").onclick = () => { if (isNarrow()) setTab("ws"); openCamera(); };
+$("#filePhoto").onchange = async e => {
+  const files = [...e.target.files]; e.target.value = ""; if (!files.length || !S.proj) return;
+  for (const f of files){ try { addPhoto(await downscaleImage(f, 1600, 0.85)); } catch (err){ console.error(err); toast("Bu fotoğraf açılamadı."); } }
+};
+
+/* ================= reading modes for PDF pages: normal, night, sepia ================= */
+function setReadMode(m){
+  S.readMode = m || ""; document.body.classList.toggle("rm-night", m === "night"); document.body.classList.toggle("rm-sepia", m === "sepia");
+  $("#readSeg").querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.m === S.readMode)));
+  savePrefs();
+}
+$("#readSeg").querySelectorAll("button").forEach(b => b.onclick = () => setReadMode(b.dataset.m));
+
+/* ================= OneDrive sync =================
+   Files live in the app's own folder on the user's OneDrive (Apps/ED Note):
+     projects/<id>.json   the project (notes, cards, links, settings)
+     pdfs/<fp>.pdf        each PDF once, shared by projects
+     audio/<rec>.<ext>    recordings
+   Nothing is ever lost on a clash: if a project changed on two devices, this device keeps its version
+   and the other one is saved next to it as a copy. Only real content counts as a change; panning and zooming do not. */
+async function deleteLocalProject(id){
+  const r = await DB.get("projects", id).catch(() => null); if (!r) return;
+  const d = r.data || {};
+  for (const x of d.recs || []) await DB.del("blobs", x.id).catch(() => {});
+  const others = (await DB.all("projects").catch(() => [])).filter(o => o.id !== id).flatMap(o => ((o.data && o.data.docs) || []).map(z => z.fp));
+  for (const z of d.docs || []) if (!others.includes(z.fp)) await DB.del("pdfs", z.fp).catch(() => {});
+  await DB.del("projects", id).catch(() => {}); await DB.del("meta", "dir:" + id).catch(() => {});
+}
+const OD = (() => {
+  const CFG = window.ED_CONFIG || {}, CID = String(CFG.onedriveClientId || "").trim();
+  const AUTH = "https://login.microsoftonline.com/" + (CFG.onedriveTenant || "common") + "/oauth2/v2.0";
+  const G = "https://graph.microsoft.com/v1.0", ROOT = G + "/me/drive/special/approot";
+  const SCOPE = "Files.ReadWrite.AppFolder User.Read offline_access openid profile";
+  const SMALL = +CFG.odSmallLimit || 4 * 1024 * 1024, CHUNK = 327680 * 16;
+  const st = { auth:null, busy:false, again:false, timer:null, last:0, err:"", needLogin:false, progress:"" };
+  const enabled = () => !!CID && /^https?:$/.test(location.protocol);
+  const redirectUri = () => location.origin + location.pathname.replace(/index\.html$/, "");
+  const b64u = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  const rand = n => b64u(crypto.getRandomValues(new Uint8Array(n)));
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  class NeedLogin extends Error {}
+
+  /* ---------- sign in (authorization code + PKCE, no server needed) ---------- */
+  async function login(){
+    if (!enabled()) return;
+    if (S.proj && !S.sample){ clearTimeout(saveTimer); try { await saveNow(); } catch {} }
+    const verifier = rand(48), state = rand(16), challenge = b64u(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier)));
+    ls.set("od:pkce", JSON.stringify({ verifier, state, back:S.proj && !S.sample && document.body.dataset.view === "editor" ? S.proj.id : null, t:Date.now() }));
+    const q = new URLSearchParams({ client_id:CID, response_type:"code", redirect_uri:redirectUri(), scope:SCOPE, state, code_challenge:challenge, code_challenge_method:"S256", response_mode:"query", prompt:"select_account" });
+    location.assign(AUTH + "/authorize?" + q);
+  }
+  async function saveAuth(){ if (st.auth) await DB.put("meta", { k:"od:auth", ...st.auth }); else await DB.del("meta", "od:auth").catch(() => {}); }
+  async function setTokens(j){
+    st.auth = { ...(st.auth || {}), access:j.access_token, exp:Date.now() + (Math.max(300, +j.expires_in || 3600) - 120) * 1000, ...(j.refresh_token ? { refresh:j.refresh_token } : {}) };
+    st.needLogin = false; await saveAuth();
+  }
+  async function tokenCall(params){
+    const r = await fetch(AUTH + "/token", { method:"POST", headers:{ "Content-Type":"application/x-www-form-urlencoded" }, body:new URLSearchParams({ client_id:CID, scope:SCOPE, ...params }) });
+    const j = await r.json().catch(() => ({})); if (!r.ok || !j.access_token) throw new Error(j.error_description || j.error || "token " + r.status); return j;
+  }
+  /* back from Microsoft's sign-in page: ?code=…&state=… */
+  async function handleRedirect(){
+    const u = new URL(location.href), code = u.searchParams.get("code"), err = u.searchParams.get("error");
+    if (!code && !err) return null;
+    let pk = null; try { pk = JSON.parse(ls.get("od:pkce") || "null"); } catch {}
+    ls.set("od:pkce", ""); history.replaceState(null, "", redirectUri());
+    if (!enabled() || !pk) return null;
+    if (err){ toast(err === "access_denied" ? "OneDrive bağlantısı iptal edildi." : "OneDrive'a bağlanılamadı.", null, 4000); return null; }
+    if (u.searchParams.get("state") !== pk.state){ toast("OneDrive girişi doğrulanamadı, tekrar dene."); return null; }
+    try {
+      await setTokens(await tokenCall({ grant_type:"authorization_code", code, redirect_uri:redirectUri(), code_verifier:pk.verifier }));
+      try { const me = await (await gfetch(G + "/me?$select=displayName,userPrincipalName,mail")).json(); st.auth.account = me.userPrincipalName || me.mail || me.displayName || ""; await saveAuth(); } catch {}
+      toast("OneDrive'a bağlandı. Projelerin eşitleniyor…", null, 3500);
+      return { back:pk.back };
+    } catch (e){ console.error(e); toast("OneDrive'a bağlanılamadı: " + e.message, null, 5000); return null; }
+  }
+  async function token(force){
+    if (!st.auth) throw new NeedLogin();
+    if (!force && st.auth.access && Date.now() < st.auth.exp) return st.auth.access;
+    if (!st.auth.refresh){ st.needLogin = true; throw new NeedLogin(); }
+    try { await setTokens(await tokenCall({ grant_type:"refresh_token", refresh_token:st.auth.refresh })); return st.auth.access; }
+    catch (e){ if (!navigator.onLine) throw e; st.needLogin = true; ui(); throw new NeedLogin(); }
+  }
+  async function gfetch(url, opts = {}, again = true){
+    const r = await fetch(url, { ...opts, headers:{ ...(opts.headers || {}), Authorization:"Bearer " + await token() } });
+    if (r.status === 401 && again){ await token(true); return gfetch(url, opts, false); }
+    if ((r.status === 429 || r.status === 503) && again){ await sleep(Math.min(30, +r.headers.get("Retry-After") || 5) * 1000); return gfetch(url, opts, false); }
+    return r;
+  }
+
+  /* ---------- files in the app folder ---------- */
+  async function list(folder, folders){
+    const out = new Map(); let url = folder ? ROOT + ":/" + folder + ":/children?$top=999" : ROOT + "/children?$top=999";
+    while (url){
+      const r = await gfetch(url); if (r.status === 404) return out; if (!r.ok) throw new Error("list " + r.status);
+      const j = await r.json(); for (const it of j.value || []) if (folders ? it.folder : it.file) out.set(it.name, it); url = j["@odata.nextLink"] || null;
+    }
+    return out;
+  }
+  const conflictErr = () => Object.assign(new Error("changed elsewhere"), { conflict:true });
+  async function put(path, blob, ifMatch){
+    const h = ifMatch ? { "If-Match":ifMatch } : {};
+    if (blob.size <= SMALL){
+      const r = await gfetch(ROOT + ":/" + path + ":/content", { method:"PUT", headers:{ ...h, "Content-Type":blob.type || "application/octet-stream" }, body:blob });
+      if (r.status === 412) throw conflictErr(); if (!r.ok) throw new Error("upload " + r.status); return r.json();
+    }
+    const s = await gfetch(ROOT + ":/" + path + ":/createUploadSession", { method:"POST", headers:{ ...h, "Content-Type":"application/json" }, body:JSON.stringify({ item:{ "@microsoft.graph.conflictBehavior":"replace" } }) });
+    if (s.status === 412) throw conflictErr(); if (!s.ok) throw new Error("session " + s.status);
+    const { uploadUrl } = await s.json();
+    for (let o = 0; o < blob.size; o += CHUNK){
+      const end = Math.min(blob.size, o + CHUNK);
+      const r = await fetch(uploadUrl, { method:"PUT", headers:{ "Content-Range":`bytes ${o}-${end - 1}/${blob.size}` }, body:blob.slice(o, end) });
+      if (r.status === 412) throw conflictErr(); if (!r.ok) throw new Error("chunk " + r.status);
+      if (end === blob.size) return r.json();
+    }
+  }
+  async function get(item, path){
+    const dl = item && item["@microsoft.graph.downloadUrl"];
+    const r = dl ? await fetch(dl) : await gfetch(ROOT + ":/" + path + ":/content"); if (!r.ok) throw new Error("download " + r.status); return r;
+  }
+  async function remove(path){ const r = await gfetch(ROOT + ":/" + path, { method:"DELETE" }); if (!r.ok && r.status !== 404) throw new Error("delete " + r.status); }
+
+  /* ---------- what counts as a change: content only, not the view ---------- */
+  async function contentHash(data){
+    const c = cleanProject(JSON.parse(JSON.stringify(data)));
+    delete c.ui; for (const sp of c.spaces) delete sp.view;
+    const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify(c)));
+    return b64u(buf).slice(0, 32);
+  }
+  const metaOf = id => DB.get("meta", "od:p:" + id).catch(() => null);
+  const setMeta = (id, eTag, hash) => DB.put("meta", { k:"od:p:" + id, eTag, hash });
+
+  async function pushAssets(data, R){
+    for (const d of data.docs || []){
+      if (R.pdfs.has(d.fp + ".pdf")) continue;
+      const p = await DB.get("pdfs", d.fp).catch(() => null); if (!p) continue;
+      st.progress = "PDF gönderiliyor: " + (d.name || "").slice(0, 30); ui();
+      R.pdfs.set(d.fp + ".pdf", await put("pdfs/" + d.fp + ".pdf", new Blob([p.bytes], { type:"application/pdf" })));
+    }
+    for (const r of data.recs || []){
+      const fn = r.id + audioExt(r.mime); if (R.audio.has(fn) || (Rec.active && Rec.active.id === r.id)) continue;
+      const b = await DB.get("blobs", r.id).catch(() => null); if (!b) continue;
+      st.progress = "Ses kaydı gönderiliyor"; ui();
+      R.audio.set(fn, await put("audio/" + fn, b.blob));
+    }
+  }
+  async function pullAssets(data, R){
+    for (const d of data.docs || []){
+      if (await DB.get("pdfs", d.fp).catch(() => null)) continue;
+      const it = R.pdfs.get(d.fp + ".pdf"); if (!it) continue;
+      st.progress = "PDF alınıyor: " + (d.name || "").slice(0, 30); ui();
+      await DB.put("pdfs", { fp:d.fp, name:d.name, bytes:new Uint8Array(await (await get(it, "pdfs/" + d.fp + ".pdf")).arrayBuffer()) });
+    }
+    for (const r of data.recs || []){
+      if (await DB.get("blobs", r.id).catch(() => null)) continue;
+      const fn = r.id + audioExt(r.mime), it = R.audio.get(fn); if (!it) continue;
+      await DB.put("blobs", { id:r.id, blob:await (await get(it, "audio/" + fn)).blob(), mime:r.mime });
+    }
+  }
+  async function upload(rec, R, ifMatch){
+    await pushAssets(rec.data, R);
+    st.progress = "Proje gönderiliyor: " + rec.name; ui();
+    const item = await put("projects/" + rec.id + ".json", new Blob([JSON.stringify(rec.data)], { type:"application/json" }), ifMatch);
+    R.projects.set(rec.id + ".json", item); return item;
+  }
+  async function storeLocal(data, R){
+    await pullAssets(data, R);
+    const clean = cleanProject(data);
+    await DB.put("projects", { id:clean.id, name:clean.name, updated:Date.now(), data:{ app:"ednote", v:SCHEMA, appVersion:APP_VERSION, savedAt:new Date().toISOString(), ...clean } });
+    return clean;
+  }
+  const isOpen = id => S.proj && S.proj.id === id && document.body.dataset.view === "editor";
+
+  /* ---------- one full sync ---------- */
+  async function sync(manual){
+    if (!enabled() || !st.auth) return;
+    if (!navigator.onLine){ if (manual) toast("İnternet yok. Bağlantı gelince eşitlenecek."); return; }
+    if (st.busy){ st.again = true; return; }
+    st.busy = true; st.err = ""; ui();
+    let got = 0, sent = 0, copies = 0, removed = 0, reopen = null;
+    try {
+      if (S.proj && !S.sample){ clearTimeout(saveTimer); await saveNow(); }
+      const tick = S.editTick || 0;
+      const top = await list("", true), sub = n => top.has(n) ? list(n) : new Map();
+      const R = { projects:await sub("projects"), pdfs:await sub("pdfs"), audio:await sub("audio") };
+      /* deletions made on this device */
+      for (const t of (await DB.all("meta")).filter(m => m.k.startsWith("od:del:"))){
+        const id = t.k.slice(7), it = R.projects.get(id + ".json");
+        if (it && it.eTag === t.eTag){ await remove("projects/" + id + ".json"); R.projects.delete(id + ".json"); }
+        await DB.del("meta", t.k);
+      }
+      const locals = await DB.all("projects"), seen = new Set();
+      for (const rec of locals){
+        seen.add(rec.id); if (!rec.data) continue;
+        const m = await metaOf(rec.id), it = R.projects.get(rec.id + ".json"), lh = await contentHash(rec.data);
+        if (!it){
+          if (m && m.hash === lh && !isOpen(rec.id)){ await deleteLocalProject(rec.id); await DB.del("meta", "od:p:" + rec.id); removed++; continue; }
+          const n = await upload(rec, R); await setMeta(rec.id, n.eTag, lh); sent++; continue;
+        }
+        if (m && it.eTag === m.eTag){
+          if (m.hash !== lh){ const n = await upload(rec, R, it.eTag); await setMeta(rec.id, n.eTag, lh); sent++; }
+          continue;
+        }
+        const remote = await (await get(it, "projects/" + rec.id + ".json")).json(), rh = await contentHash(remote);
+        if (rh === lh){ await setMeta(rec.id, it.eTag, lh); continue; }
+        if (m && lh === m.hash){
+          if (isOpen(rec.id) && (S.editTick || 0) !== tick){ st.again = true; continue; }
+          const clean = await storeLocal(remote, R); await setMeta(rec.id, it.eTag, rh); got++;
+          if (isOpen(rec.id)) reopen = clean; continue;
+        }
+        if (m && rh === m.hash){ const n = await upload(rec, R, it.eTag); await setMeta(rec.id, n.eTag, lh); sent++; continue; }
+        /* changed on both devices: keep ours, save theirs next to it */
+        const copy = { ...remote, id:"p" + uid(), name:(remote.name || rec.name) + " (diğer cihaz, " + new Date().toLocaleDateString("tr-TR") + ")" };
+        const cc = await storeLocal(copy, R); const n2 = await upload({ id:cc.id, name:cc.name, data:(await DB.get("projects", cc.id)).data }, R); await setMeta(cc.id, n2.eTag, await contentHash(cc));
+        const n = await upload(rec, R, it.eTag); await setMeta(rec.id, n.eTag, lh); copies++; sent++;
+      }
+      /* new on OneDrive */
+      for (const [name, it] of R.projects){
+        const id = name.replace(/\.json$/, ""); if (seen.has(id) || !/\.json$/.test(name)) continue;
+        const remote = await (await get(it, "projects/" + name)).json(); if (!remote || remote.id !== id) continue;
+        const clean = await storeLocal(remote, R); await setMeta(id, it.eTag, await contentHash(clean)); got++;
+      }
+      st.last = Date.now(); ls.set("od:last", String(st.last));
+      if (reopen){ await openProject(reopen); toast("Diğer cihazdaki değişiklikler alındı."); }
+      if (copies) toast(`${copies} proje iki cihazda da değişmişti. Diğer cihazdaki sürüm "(diğer cihaz)" adıyla ayrıca kaydedildi.`, null, 7000);
+      else if (manual) toast(got || sent || removed ? `Eşitlendi: ${got} alındı, ${sent} gönderildi.` : "Her şey güncel.");
+      if (document.body.dataset.view === "home" && (got || copies || removed)) renderHome();
+    } catch (e){
+      if (e instanceof NeedLogin){ st.needLogin = true; if (manual) login(); }
+      else { console.warn("OneDrive", e); st.err = navigator.onLine ? "Eşitlenemedi" : "İnternet yok"; if (manual) toast("OneDrive ile eşitlenemedi. Biraz sonra tekrar denenecek."); }
+    }
+    st.busy = false; st.progress = ""; ui();
+    if (st.again){ st.again = false; soon(4000); }
+  }
+  function soon(ms = 15000){ if (!enabled() || !st.auth || st.needLogin) return; clearTimeout(st.timer); st.timer = setTimeout(() => sync(false), ms); }
+  async function forget(id){ const m = await metaOf(id); if (m){ await DB.put("meta", { k:"od:del:" + id, eTag:m.eTag }); await DB.del("meta", "od:p:" + id); soon(2000); } }
+  async function logout(){
+    st.auth = null; await saveAuth();
+    for (const m of await DB.all("meta").catch(() => [])) if (/^od:(p|del):/.test(m.k)) await DB.del("meta", m.k).catch(() => {});
+    ui(); toast("OneDrive bağlantısı kesildi. Projeler bu cihazda kaldı.");
+  }
+
+  /* ---------- status on the home screen and in the editor ---------- */
+  const ago = t => { const s = (Date.now() - t) / 1000; return s < 60 ? "az önce" : s < 3600 ? Math.round(s / 60) + " dk önce" : s < 86400 ? Math.round(s / 3600) + " saat önce" : new Date(t).toLocaleDateString("tr-TR"); };
+  function ui(){
+    const row = $("#odRow"), on = enabled(); row.hidden = !on; $("#mSync").hidden = !on;
+    if (!on) return;
+    const txt = $("#odText"), btn = $("#odBtn"), off = $("#odOff");
+    if (!st.auth){ txt.textContent = "Projelerini cihazların arasında eşitle"; btn.textContent = "Bağlan"; btn.onclick = login; off.hidden = true; $("#mSync").textContent = "OneDrive'a bağlan"; return; }
+    off.hidden = false; $("#mSync").textContent = "OneDrive ile şimdi eşitle";
+    if (st.needLogin){ txt.textContent = (st.auth.account ? st.auth.account + " · " : "") + "oturumu yenilemek gerekiyor"; btn.textContent = "Yeniden giriş"; btn.onclick = login; $("#mSync").textContent = "OneDrive'a yeniden giriş yap"; return; }
+    txt.textContent = (st.auth.account ? st.auth.account + " · " : "") + (st.busy ? (st.progress || "eşitleniyor…") : st.err ? st.err : st.last ? "eşitlendi, " + ago(st.last) : "bağlı");
+    btn.textContent = "Şimdi eşitle"; btn.disabled = st.busy; btn.onclick = () => sync(true);
+    if (S.proj && !S.sample && document.body.dataset.view === "editor" && !st.busy && st.last && !st.err && el.saveState.textContent.startsWith("Kaydedildi")) setSaveState("Kaydedildi · OneDrive");
+  }
+  async function boot(){
+    if (!enabled()){ ui(); return null; }
+    try { const a = await DB.get("meta", "od:auth"); if (a && a.access) { const { k, ...rest } = a; st.auth = rest; } } catch {}
+    st.last = +ls.get("od:last") || 0;
+    const back = await handleRedirect();
+    ui();
+    if (st.auth){ await sync(false); }
+    window.addEventListener("online", () => soon(1500));
+    document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") sync(false); else soon(1500); });
+    setInterval(() => { if (document.visibilityState === "visible") sync(false); }, 3 * 60 * 1000);
+    setInterval(ui, 60 * 1000);
+    return back;
+  }
+  $("#odOff").onclick = () => { if (!$("#odOff").dataset.arm){ $("#odOff").dataset.arm = "1"; toast("Bağlantıyı kesmek için tekrar dokun. Projeler bu cihazda kalır."); setTimeout(() => delete $("#odOff").dataset.arm, 4000); return; } logout(); };
+  $("#mSync").onclick = () => { closePop(); st.auth && !st.needLogin ? sync(true) : login(); };
+  return { boot, sync, soon, forget, login, ui, enabled, _st:st };
+})();
 
 /* ================= splitter ================= */
 (function(){
@@ -2410,11 +3243,12 @@ async function openSample(){
 
 /* ================= boot ================= */
 async function boot(){
-  loadPrefs(); setTool("select");
+  loadPrefs(); setReadMode(S.readMode); setTool("select");
   if (ls.get("alinti:penOnly") === "1") setPenOnly(true, false);
   S.recMode = ls.get("alinti:recMode") === "keep" ? "keep" : "trace"; renderRecModeIcon();
   await migrateOld();
   setView("home");
+  OD.boot().then(async back => { if (back && back.back){ const r = await DB.get("projects", back.back).catch(() => null); if (r && r.data && document.body.dataset.view === "home") openProject(r.data); } }).catch(e => console.warn(e));
   if ("launchQueue" in window) window.launchQueue.setConsumer(async lp => { if (lp.files && lp.files.length){ const f = await lp.files[0].getFile(); if (/\.(ednote|zip)$/i.test(f.name)) importZip(f); else openPdfFile(f, "new"); } });
   if ("serviceWorker" in navigator && /^https?:/.test(location.protocol) && location.hostname !== "localhost" && location.hostname !== "127.0.0.1"){
     navigator.serviceWorker.register("sw.js").then(reg => {
@@ -2422,6 +3256,6 @@ async function boot(){
     }).catch(() => {});
   }
 }
-window.EDNote = window.AlintiMasasi = { version:APP_VERSION, _S:S };
+window.EDNote = window.AlintiMasasi = { version:APP_VERSION, _S:S, _OD:OD };
 boot();
 })();
