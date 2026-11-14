@@ -1,5 +1,5 @@
 /* ED Note service worker: works offline, picks up new versions when online. */
-const CACHE = "ednote-v6.6.0";
+const CACHE = "ednote-v6.6.1";
 const SHELL = ["./", "index.html", "style.css", "app.js", "config.js", "manifest.webmanifest",
   "vendor/pdf.min.js", "vendor/pdf.worker.min.js", "vendor/jszip.min.js",
   "icons/icon-192.png", "icons/icon-512.png", "icons/maskable-512.png", "icons/apple-touch-icon.png", "icons/favicon-64.png", "icons/favicon.svg", "icons/logo.svg",
@@ -18,7 +18,8 @@ self.addEventListener("fetch", e => {
     e.respondWith(caches.match(req).then(hit => hit || fetch(req).then(res => { const copy = res.clone(); caches.open(CACHE).then(c => c.put(req, copy)); return res; })));
     return;
   }
-  e.respondWith(fetch(req).then(res => {
+  /* always ask the server whether the app changed (cheap: an unchanged file answers "not modified"), so a new version shows up at once */
+  e.respondWith(fetch(req, { cache:"no-cache" }).then(res => {
     if (res.ok){ const copy = res.clone(); caches.open(CACHE).then(c => c.put(req, copy)); }
     return res;
   }).catch(() => caches.match(req, { ignoreSearch:true }).then(hit => hit || caches.match("index.html"))));

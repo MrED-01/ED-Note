@@ -2,7 +2,7 @@
    adjustable stroke sizes, straight lines and the .ednote file format */
 (() => {
 "use strict";
-const APP_VERSION = "6.6.0";
+const APP_VERSION = "6.6.1";
 /* COMPATIBILITY RULE: every release must open and edit files from every earlier release.
    SCHEMA is the data version written to project.json. cleanProject() upgrades any older shape
    (v3 single-PDF files go through migrateV3 first) and never drops user content. Fixture files from
@@ -618,7 +618,7 @@ function makePin(v, p, pt){ const pn = stamp({ id:"n" + uid(), doc:v.fp, page:p.
 const linkTmp = document.createElementNS(NS, "svg"); linkTmp.id = "linkTmp"; document.body.appendChild(linkTmp);
 function clearLinkPreview(){ linkTmp.innerHTML = ""; document.querySelectorAll(".linktarget").forEach(n => n.classList.remove("linktarget")); }
 function inkLinkTarget(e){
-  const d = draw; if (!d || d.mode !== "stroke" || d.st.kind !== "pen") return null;
+  const d = draw; if (!d || d.mode !== "stroke") return null;
   const under = document.elementFromPoint(e.clientX, e.clientY); if (!under) return null;
   const card = under.closest(".card"), page = under.closest(".viewer .page");
   if (d.where === "pdf"){
@@ -2860,7 +2860,8 @@ function addPhoto({ src, w:iw, h:ih }){
 /* on a laptop the file picker cannot take a photo, so the camera opens here; phones use their own camera screen */
 const CAM = { stream:null };
 async function openCamera(){
-  if (matchMedia("(pointer:coarse)").matches || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){ $("#filePhoto").click(); return; }
+  const phone = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  if (phone || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){ $("#filePhoto").click(); return; }
   $("#cam").hidden = false; $("#camErr").hidden = true; $("#camShot").disabled = true; $("#camVideo").hidden = false;
   try {
     CAM.stream = await navigator.mediaDevices.getUserMedia({ video:{ facingMode:{ ideal:"environment" }, width:{ ideal:1920 }, height:{ ideal:1080 } }, audio:false });
@@ -3247,7 +3248,7 @@ async function boot(){
   if (ls.get("alinti:penOnly") === "1") setPenOnly(true, false);
   S.recMode = ls.get("alinti:recMode") === "keep" ? "keep" : "trace"; renderRecModeIcon();
   await migrateOld();
-  setView("home");
+  setView("home"); $("#appVer").textContent = "ED Note " + APP_VERSION;
   OD.boot().then(async back => { if (back && back.back){ const r = await DB.get("projects", back.back).catch(() => null); if (r && r.data && document.body.dataset.view === "home") openProject(r.data); } }).catch(e => console.warn(e));
   if ("launchQueue" in window) window.launchQueue.setConsumer(async lp => { if (lp.files && lp.files.length){ const f = await lp.files[0].getFile(); if (/\.(ednote|zip)$/i.test(f.name)) importZip(f); else openPdfFile(f, "new"); } });
   if ("serviceWorker" in navigator && /^https?:/.test(location.protocol) && location.hostname !== "localhost" && location.hostname !== "127.0.0.1"){
