@@ -181,5 +181,189 @@
   "spaces": 1,
   "audio": 0,
   "folder": "Dönem 3/Kompozit"
+ },
+ "v6.9.4.ednote": {
+  "docs": 1,
+  "items": 3,
+  "links": 2,
+  "groups": 0,
+  "ink": 0,
+  "texts": 0,
+  "comments": 0,
+  "bookmarks": 0,
+  "pins": 1,
+  "recs": 0,
+  "spaces": 1,
+  "audio": 0,
+  "folder": "Dönem 3/Kompozit",
+  "rich": 1,
+  "cc": 1,
+  "paper": "#e3f2fd"
+ },
+ "v6.9.5.ednote": {
+  "docs": 1,
+  "items": 3,
+  "links": 2,
+  "groups": 0,
+  "ink": 0,
+  "texts": 0,
+  "comments": 0,
+  "bookmarks": 0,
+  "pins": 1,
+  "recs": 0,
+  "spaces": 1,
+  "audio": 0,
+  "folder": "Dönem 3/Kompozit",
+  "rich": 1,
+  "cc": 1,
+  "paper": "#e3f2fd",
+  "lib": {
+   "star": true,
+   "pin": true,
+   "label": "#0090ff",
+   "coverPage": 2,
+   "read": [
+    2,
+    3
+   ]
+  }
+ },
+ "v6.9.6.ednote": {
+  "docs": 1,
+  "items": 3,
+  "links": 2,
+  "groups": 1,
+  "ink": 0,
+  "texts": 0,
+  "comments": 0,
+  "bookmarks": 0,
+  "pins": 1,
+  "recs": 0,
+  "spaces": 1,
+  "audio": 0,
+  "folder": "Dönem 3/Kompozit",
+  "rich": 1,
+  "cc": 1,
+  "paper": "#e3f2fd",
+  "lib": {
+   "star": true,
+   "pin": true,
+   "label": "#0090ff",
+   "coverPage": 2,
+   "read": [
+    2,
+    3
+   ]
+  },
+  "desk": {
+   "desk": "wood",
+   "grain": true,
+   "group": [
+    "#3e63dd",
+    "cream"
+   ],
+   "stickers": 2,
+   "onCard": 1,
+   "shapes": "elbow,elbow",
+   "domStk": 2
+  }
+ },
+ "v6.9.7.ednote": {
+  "docs": 1,
+  "items": 3,
+  "links": 2,
+  "groups": 1,
+  "ink": 4,
+  "texts": 1,
+  "comments": 0,
+  "bookmarks": 0,
+  "pins": 1,
+  "recs": 0,
+  "spaces": 1,
+  "audio": 0,
+  "folder": "Dönem 3/Kompozit",
+  "rich": 1,
+  "cc": 1,
+  "paper": "#e3f2fd",
+  "lib": {
+   "star": true,
+   "pin": true,
+   "label": "#0090ff",
+   "coverPage": 2,
+   "read": [
+    2,
+    3
+   ]
+  },
+  "desk": {
+   "desk": "wood",
+   "grain": true,
+   "group": [
+    "#3e63dd",
+    "cream"
+   ],
+   "stickers": 2,
+   "onCard": 1,
+   "shapes": "elbow,elbow",
+   "domStk": 2
+  },
+  "pens": {
+   "inkColors": "#7986cb,#38383c,k,#ce93d8",
+   "tips": ",pencil,callig,",
+   "text": "#6a4bb5",
+   "pencilDom": 1,
+   "hexStyle": "rgb(121, 134, 203)"
+  }
+ },
+ "v6.9.9.ednote": {
+  "docs": 1,
+  "items": 3,
+  "links": 2,
+  "groups": 1,
+  "ink": 5,
+  "texts": 1,
+  "comments": 0,
+  "bookmarks": 0,
+  "pins": 1,
+  "recs": 0,
+  "spaces": 1,
+  "audio": 0,
+  "folder": "Dönem 3/Kompozit",
+  "rich": 1,
+  "cc": 1,
+  "paper": "#e3f2fd",
+  "lib": {
+   "star": true,
+   "pin": true,
+   "label": "#0090ff",
+   "coverPage": 2,
+   "read": [
+    2,
+    3
+   ]
+  },
+  "desk": {
+   "desk": "wood",
+   "grain": true,
+   "group": [
+    "#3e63dd",
+    "cream"
+   ],
+   "stickers": 2,
+   "onCard": 1,
+   "shapes": "elbow,elbow",
+   "domStk": 2
+  },
+  "pens": {
+   "inkColors": "#7986cb,#38383c,k,#ce93d8,k",
+   "tips": ",pencil,callig,,",
+   "text": "#6a4bb5",
+   "pencilDom": 1,
+   "hexStyle": "rgb(121, 134, 203)"
+  },
+  "shape": {
+   "sh": 1,
+   "d": "M100,600L220,600L220,680L100,680L100,600"
+  }
  }
 }

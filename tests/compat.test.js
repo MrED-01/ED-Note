@@ -32,6 +32,33 @@ const check = (name, cond, msg) => { if (!cond){ failed++; console.log(`  FAIL $
     check(file, !!st, "project did not open"); if (!st){ await ctx.close(); continue; }
     for (const k of [...KEYS, "audio"]) check(file, st.c[k] === exp[k], `${k}: expected ${exp[k]}, got ${st.c[k]}`);
     check(file, st.outside === 0, `${st.outside} cards outside their sheet`);
+    /* v6.9.9: recognised shapes keep sharp corners */
+    if (exp.shape){
+      const r = await p.evaluate(() => { const st = EDNote._S.proj.ink.find(s => s.id === "shp1"), h = document.querySelector('path[data-id="shp1"]'); return { sh:st ? st.sh : 0, d:h ? h.getAttribute("d") : "" }; });
+      check(file, JSON.stringify(r) === JSON.stringify(exp.shape), `shape fields: ${JSON.stringify(r)}`);
+    }
+    /* v6.9.7: free ink colours, pencil and calligraphy tips, coloured text box */
+    if (exp.pens){
+      const r = await p.evaluate(() => { const P = EDNote._S.proj, h = document.querySelector('path[data-id="i1"]');
+        return { inkColors:P.ink.map(s => s.color).join(","), tips:P.ink.map(s => s.tip || "").join(","), text:(P.texts[0] || {}).color, pencilDom:document.querySelectorAll("path.ipencil").length, hexStyle:h ? getComputedStyle(h).stroke : "" }; });
+      check(file, JSON.stringify(r) === JSON.stringify(exp.pens), `pen fields: ${JSON.stringify(r)}`);
+    }
+    /* v6.9.6: desk surface, paper grain, group look, stickers, link shape */
+    if (exp.desk){
+      const r = await p.evaluate(() => { const P = EDNote._S.proj, sp = P.spaces[0], g = P.groups[0] || {};
+        return { desk:sp.desk || "", grain:!!sp.grain, group:[g.c, g.bg], stickers:(P.stickers || []).length, onCard:(P.stickers || []).filter(k => k.card).length, shapes:P.links.map(l => l.shape || "").join(","), domStk:document.querySelectorAll("#plane .stk").length }; });
+      check(file, JSON.stringify(r) === JSON.stringify(exp.desk), `desk fields: ${JSON.stringify(r)}`);
+    }
+    /* v6.9.5: star, pin, label colour, cover page and reading progress survive the import */
+    if (exp.lib){
+      const r = await p.evaluate(() => { const P = EDNote._S.proj, fp = P.docs[0].fp; return { star:!!P.star, pin:!!P.pin, label:P.label || "", coverPage:P.cover && P.cover.page, read:P.read && P.read[fp] }; });
+      check(file, JSON.stringify(r) === JSON.stringify(exp.lib), `library fields: ${JSON.stringify(r)}`);
+    }
+    /* v6.9.4: formatted notes, free card colours and paper colours */
+    if (exp.rich){
+      const r = await p.evaluate(() => { const P = EDNote._S.proj; return { rich:P.items.filter(i => i.rich).length, cc:P.items.filter(i => i.cc).length, paper:P.spaces[0].paper || "", spans:document.querySelectorAll("#plane .note span[data-rt]").length }; });
+      check(file, r.rich === exp.rich && r.cc === exp.cc && r.paper === exp.paper && r.spans > 0, `formatting: ${JSON.stringify(r)}`);
+    }
     check(file, st.sheets, "a space has no sheet");
     /* every space renders all its cards */
     const spaces = await p.evaluate(() => EDNote._S.proj.spaces.map(s => s.id));

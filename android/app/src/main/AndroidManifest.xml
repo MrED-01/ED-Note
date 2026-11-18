@@ -22,6 +22,43 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
+            <!-- "Open with ED Note": .ednote projects (also when an app renamed them to .zip) and PDFs -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="content" />
+                <data android:scheme="file" />
+                <data android:mimeType="application/vnd.ednote" />
+                <data android:mimeType="application/vnd.ednote+zip" />
+                <data android:mimeType="application/octet-stream" />
+                <data android:mimeType="application/zip" />
+                <data android:mimeType="application/x-zip-compressed" />
+                <data android:mimeType="application/pdf" />
+            </intent-filter>
+            <!-- file managers that only know the name: match the .ednote ending -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="content" android:host="*" android:mimeType="*/*" />
+                <data android:scheme="file" android:host="*" android:mimeType="*/*" />
+                <data android:pathPattern=".*\\.ednote" />
+                <data android:pathPattern=".*\\..*\\.ednote" />
+                <data android:pathPattern=".*\\..*\\..*\\.ednote" />
+            </intent-filter>
+            <!-- "Share to ED Note" from WhatsApp, mail, Files -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="application/vnd.ednote" />
+                <data android:mimeType="application/vnd.ednote+zip" />
+                <data android:mimeType="application/octet-stream" />
+                <data android:mimeType="application/zip" />
+                <data android:mimeType="application/x-zip-compressed" />
+                <data android:mimeType="application/pdf" />
+            </intent-filter>
+
         </activity>
 
         <provider
