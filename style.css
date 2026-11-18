@@ -1245,3 +1245,26 @@ i.hm.l1{background:color-mix(in srgb,var(--accent) 30%,var(--surface))} i.hm.l2{
 .sp-pct{grid-area:p;text-align:right;font-variant-numeric:tabular-nums;font-weight:600}
 .sp-meta{grid-area:m;font-size:12px;color:var(--ink-2)}
 .st-foot{margin-top:18px;font-size:12px}
+
+/* v6.9.9: small screens, nothing may overlap or leave the screen */
+#mRec{display:none}
+@media (max-width:900px){
+  .opts{flex-wrap:wrap;justify-content:center;border-radius:18px;row-gap:4px;overflow:visible;max-width:calc(100vw - 20px)}
+  .opts .vsep{display:none}
+  .opts #swatches,.opts #sizes{flex-wrap:wrap;justify-content:center;row-gap:4px;max-width:100%}
+  .penbox{flex-wrap:wrap;justify-content:center;border-radius:18px;overflow:visible;max-width:calc(100vw - 20px)}
+}
+@media (max-width:600px){
+  .topbar{display:flex}
+  .tb-left,.tb-right{flex:none}
+  .tb-center{flex:1 1 0;min-width:0;display:flex;justify-content:center}
+  #tools{min-width:0;overflow-x:auto;scrollbar-width:none}
+  #tools::-webkit-scrollbar{display:none}
+  #tools button{flex:none}
+  body:not(.recording) #bRec{display:none}
+  #mRec{display:flex}
+}
+@media (max-width:380px){ .seg button{width:32px} .topbar .icon-btn{width:34px} }
+.vtab{max-width:min(220px,100%)}
+.pdfarea.dual .vtab{max-width:min(128px,100%)}
+#morePop,.pop.menu{max-height:calc(100dvh - 24px);overflow-y:auto;overscroll-behavior:contain}

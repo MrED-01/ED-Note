@@ -401,7 +401,7 @@ function renderOpts(){
     const sb = document.createElement("button"); sb.className = "chip-toggle shape-tg"; sb.setAttribute("aria-pressed", String(S.shapeSnap !== false)); sb.title = "Açıkken: çizip kalemi bir an beklet, düzgün şekle dönüşür (çizgi, ok, daire, üçgen, kare, beşgen, altıgen)";
     sb.innerHTML = '<svg viewBox="0 0 24 24"><path d="M4 17 9 7l5 10z"/><circle cx="17" cy="9" r="3.5"/></svg><span>Şekil</span>';
     sb.onclick = () => { S.shapeSnap = S.shapeSnap === false; savePrefs(); renderOpts(); toast(S.shapeSnap ? "Şekil tanıma açık: çiz ve kalemi bir an beklet." : "Şekil tanıma kapalı."); };
-    const sep = document.createElement("span"); sep.className = "vsep"; sw.append(sep, sb);
+    const sep = document.createElement("span"); sep.className = "vsep"; sz.append(sep, sb);
   }
   renderPenBox(kind);
   sw.hidden = kind === "eraser"; sw.nextElementSibling.hidden = kind === "eraser";
@@ -4249,6 +4249,7 @@ $("#bStk").onclick = () => openStickerPick($("#bStk"), v => addSticker(v));
 $("#grainChk").onchange = e => { if (e.target.checked) curSpace().grain = true; else delete curSpace().grain; renderSheet(); save(); };
 $("#hLook").onclick = () => openAppLook($("#hLook"));
 $("#mLook").onclick = () => { const b = $("#bMore"); closePop(); openAppLook(b); };
+$("#mRec").onclick = () => { closePop(); if (Rec.active) stopRecording(); else { renderRecModeIcon(); openPop(el.recPop, $("#bMore")); } };
 $("#mFocus").onclick = () => { closePop(); setFocus(true); toast("Tam ekran. Çubukları geri getirmek için sağ üstteki düğmeye dokun."); };
 $("#focusExit").onclick = () => setFocus(false);
 $("#fUndo").onclick = () => $("#bUndo").click(); $("#fRedo").onclick = () => $("#bRedo").click();
