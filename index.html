@@ -32,6 +32,8 @@ if (!/^https?:$/.test(location.protocol)) document.addEventListener("DOMContentL
     <nav class="lib-nav" aria-label="Kitaplık">
       <button data-v="proj" aria-current="page"><svg viewBox="0 0 24 24"><path d="M4 7.5A2.5 2.5 0 0 1 6.5 5h3.2l2 2.2h5.8A2.5 2.5 0 0 1 20 9.7v7.8a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 17.5z"/></svg>Projelerim</button>
       <button data-v="recent"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 7.5V12l3 2"/></svg>Son açılanlar</button>
+      <button data-v="star"><svg viewBox="0 0 24 24"><path d="m12 4.5 2.3 4.7 5.2.8-3.8 3.6.9 5.1-4.6-2.4-4.6 2.4.9-5.1-3.8-3.6 5.2-.8z"/></svg>Yıldızlı</button>
+      <button data-v="stats"><svg viewBox="0 0 24 24"><path d="M5 19V11M10 19V6M15 19v-5M20 19V9"/></svg>Okuma</button>
       <button data-v="trash"><svg viewBox="0 0 24 24"><path d="M5 7h14M10 11v6M14 11v6M7 7l1 12a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2l1-12M9.5 7V4.5h5V7"/></svg>Çöp kutusu<span class="lib-count" id="trashCount"></span></button>
     </nav>
     <div class="lib-add">
@@ -45,7 +47,7 @@ if (!/^https?:$/.test(location.protocol)) document.addEventListener("DOMContentL
       <button class="btn sm" id="odBtn"></button>
       <button class="icon-btn sm" id="odOff" hidden title="OneDrive bağlantısını kes" aria-label="OneDrive bağlantısını kes"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
     </div>
-    <div class="lib-foot"><button class="link" id="hSample">Örnek belgeyle dene</button><p class="app-ver" id="appVer"></p></div>
+    <div class="lib-foot"><button class="btn sm look-btn" id="hLook"><svg viewBox="0 0 24 24"><path d="M12 3.5a8.5 8.5 0 1 0 0 17c1.3 0 1.9-.8 1.6-1.8-.4-1.2.4-2.2 1.6-2.2h1.7a3.6 3.6 0 0 0 3.6-3.6c0-5.2-3.8-9.4-8.5-9.4z"/><circle cx="7.6" cy="11.4" r="1.1"/><circle cx="10.4" cy="7.6" r="1.1"/><circle cx="14.9" cy="7.8" r="1.1"/></svg>Görünüm</button><button class="link" id="hSample">Örnek belgeyle dene</button><p class="app-ver" id="appVer"></p></div>
   </aside>
   <main class="lib-main">
     <div class="lib-top">
@@ -59,6 +61,7 @@ if (!/^https?:$/.test(location.protocol)) document.addEventListener("DOMContentL
       <button class="btn sm" id="libEmptyTrash" hidden>Çöpü boşalt</button>
     </div>
     <p class="lib-note" id="libNote" hidden></p>
+    <div id="libStats" class="lib-stats" hidden></div>
     <ul id="recent" class="lib-grid"></ul>
     <p id="recentEmpty" class="quiet lib-empty">Henüz bir proje yok. Soldaki <b>PDF aç</b> ile başla; birden fazla PDF seçersen hepsi aynı projeye girer.</p>
   </main>
@@ -93,7 +96,7 @@ if (!/^https?:$/.test(location.protocol)) document.addEventListener("DOMContentL
         <button data-tool="hl" title="Fosforlu kalem (H)" aria-label="Fosforlu kalem"><svg viewBox="0 0 24 24"><path d="M9 11.5 4.5 16v3h3L12 14.5"/><path d="m9 11.5 6-6 3.5 3.5-6 6z"/><path d="M14 20.5h6"/></svg></button>
         <button data-tool="eraser" title="Silgi (E)" aria-label="Silgi"><svg viewBox="0 0 24 24"><path d="M8 20h11"/><path d="m5 14.5 8.5-8.5a2 2 0 0 1 2.8 0l2.7 2.7a2 2 0 0 1 0 2.8L11.5 19H9.5z"/><path d="m9 10.5 5.5 5.5"/></svg></button>
         <button data-tool="text" title="Metin kutusu (T)" aria-label="Metin"><svg viewBox="0 0 24 24"><path d="M6 6.5V5h12v1.5M12 5v14M9.5 19h5"/></svg></button>
-        <button data-tool="lasso" title="Kement: bir bölgenin etrafını çiz, görsel olarak masaya ekle (L)" aria-label="Kement"><svg viewBox="0 0 24 24"><ellipse cx="12" cy="10.5" rx="7.5" ry="5.5" stroke-dasharray="2.6 2.4"/><path d="M8 15.5c-1.5 1.6-1.2 3.6.8 4"/></svg></button>
+        <button data-tool="lasso" title="Kement: kalem çizimlerinin etrafını çiz, seç, taşı ve boyutlandır; çizim yoksa bölgeyi görsel olarak masaya ekler (L)" aria-label="Kement"><svg viewBox="0 0 24 24"><ellipse cx="12" cy="10.5" rx="7.5" ry="5.5" stroke-dasharray="2.6 2.4"/><path d="M8 15.5c-1.5 1.6-1.2 3.6.8 4"/></svg></button>
       </div>
     </div>
     <div class="tb-right">
@@ -141,11 +144,13 @@ if (!/^https?:$/.test(location.protocol)) document.addEventListener("DOMContentL
       <div class="hud hud-ws">
         <button class="hud-btn" id="bNote" title="Not kartı ekle"><svg viewBox="0 0 24 24"><path d="M12 6v12M6 12h12"/></svg><span>Not</span></button>
         <button class="hud-btn icon" id="bPhoto" title="Fotoğraf ya da video ekle (kayıt sırasında kaydın o anına bağlanır)" aria-label="Fotoğraf ya da video ekle"><svg viewBox="0 0 24 24"><path d="M4 8.5a2 2 0 0 1 2-2h2l1.5-2h5l1.5 2h2a2 2 0 0 1 2 2V18a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><circle cx="12" cy="13" r="3.6"/></svg></button>
+        <button class="hud-btn icon" id="bStk" title="Çıkartma ekle (masaya ya da sürükleyip bir karta)" aria-label="Çıkartma ekle"><svg viewBox="0 0 24 24"><path d="M20 12.5V7a3 3 0 0 0-3-3H7a3 3 0 0 0-3 3v10a3 3 0 0 0 3 3h5.5z"/><path d="M12.5 20c0-4.1 3.4-7.5 7.5-7.5"/><circle cx="9" cy="10" r=".9"/><circle cx="15" cy="10" r=".9"/></svg></button>
         <button class="hud-btn icon" id="bWsFind" title="Masada ara ve etiketle süz" aria-label="Masada ara"><svg viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6"/><path d="M15 15l5 5"/></svg></button>
         <span class="hsep"></span>
         <button class="hud-btn icon" id="bWsOut" aria-label="Uzaklaştır"><svg viewBox="0 0 24 24"><path d="M6 12h12"/></svg></button>
         <span class="hud-val" id="zl">100%</span>
         <button class="hud-btn icon" id="bWsIn" aria-label="Yakınlaştır"><svg viewBox="0 0 24 24"><path d="M6 12h12M12 6v12"/></svg></button>
+        <button class="hud-btn icon" id="bMini" title="Mini harita" aria-label="Mini harita" aria-pressed="false"><svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="2"/><rect x="11" y="10" width="6" height="5" rx="1"/></svg></button>
         <button class="hud-btn icon" id="bFit" title="Tüm kartları göster" aria-label="Tümünü göster"><svg viewBox="0 0 24 24"><path d="M5 9.5V5h4.5M19 9.5V5h-4.5M5 14.5V19h4.5M19 14.5V19h-4.5"/></svg></button>
       </div>
     </section>
@@ -190,6 +195,9 @@ if (!/^https?:$/.test(location.protocol)) document.addEventListener("DOMContentL
   <div class="menu-sep"></div>
   <button class="menu-item" id="mFolder" role="menuitem" hidden>Klasöre bağla</button>
   <button class="menu-item" id="mSync" role="menuitem" hidden>OneDrive ile şimdi eşitle</button>
+  <button class="menu-item" id="mLook" role="menuitem">Görünüm ayarları…</button>
+  <button class="menu-item" id="mFocus" role="menuitem">Tam ekran (çubukları gizle)</button>
+  <button class="menu-item" id="mSplitDir" role="menuitem">Bölme yönü: otomatik</button>
   <button class="menu-item" id="mPdf" role="menuitem">Notlu PDF olarak dışa aktar</button>
   <button class="menu-item" id="mExport" role="menuitem">Projeyi dışa aktar (.ednote)</button>
   <button class="menu-item" id="mMd" role="menuitem">Notları Markdown olarak dışa aktar</button>
@@ -259,6 +267,9 @@ if (!/^https?:$/.test(location.protocol)) document.addEventListener("DOMContentL
   <div class="pat-row" id="patRow" role="radiogroup" aria-label="Desen"></div>
   <div class="sh-l">Kağıt rengi</div>
   <div class="st-row" id="paperRow" role="radiogroup" aria-label="Kağıt rengi"></div>
+  <label class="look-chk sh-grain"><input type="checkbox" id="grainChk"> Kağıt dokusu (lifli kağıt)</label>
+  <div class="sh-l">Masa yüzeyi</div>
+  <div class="desk-row" id="deskRow" role="radiogroup" aria-label="Masa yüzeyi"></div>
   <div class="sh-l">Boyut</div>
   <div class="sh-row"><select id="shPreset" aria-label="Hazır boyut"></select>
     <span class="lmode" id="shOrient" role="radiogroup" aria-label="Yön"><button data-o="land" role="radio" title="Yatay"><svg viewBox="0 0 24 24"><rect x="3.5" y="6.5" width="17" height="11" rx="1.5"/></svg></button><button data-o="port" role="radio" title="Dikey"><svg viewBox="0 0 24 24"><rect x="6.5" y="3.5" width="11" height="17" rx="1.5"/></svg></button></span></div>
@@ -272,7 +283,9 @@ if (!/^https?:$/.test(location.protocol)) document.addEventListener("DOMContentL
   <button class="chip-a" id="chipComment"><svg viewBox="0 0 24 24"><path d="M5 5h14v10H10l-4 4v-4H5z"/></svg>Yorum</button>
 </div>
 <div id="ghost" hidden></div>
+<div id="focusRail"><button id="fUndo" title="Geri al" aria-label="Geri al"><svg viewBox="0 0 24 24"><path d="M9 14 4.5 9.5 9 5"/><path d="M4.5 9.5H14a5.5 5.5 0 0 1 0 11h-3"/></svg></button><button id="fRedo" title="İleri al" aria-label="İleri al"><svg viewBox="0 0 24 24"><path d="m15 14 4.5-4.5L15 5"/><path d="M19.5 9.5H10a5.5 5.5 0 0 0 0 11h3"/></svg></button><button id="focusExit" title="Çubukları göster" aria-label="Tam ekrandan çık"><svg viewBox="0 0 24 24"><path d="M9 4H4v5M15 4h5v5M9 20H4v-5M15 20h5v-5"/></svg></button></div>
 <div id="toast" hidden role="status"><span id="toastMsg"></span></div>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><filter id="edPencil" x="-10%" y="-10%" width="120%" height="120%" color-interpolation-filters="sRGB"><feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" seed="4" result="n"/><feColorMatrix in="n" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 -1.5 1.45" result="m"/><feComposite in="SourceGraphic" in2="m" operator="in" result="g"/><feDisplacementMap in="g" in2="n" scale="0.9" xChannelSelector="R" yChannelSelector="G"/></filter></svg>
 <div class="cam" id="cam" hidden role="dialog" aria-label="Kamera">
   <div class="cam-box">
     <div class="cam-view"><video id="camVideo" playsinline autoplay muted></video><p class="cam-err" id="camErr" hidden></p></div>

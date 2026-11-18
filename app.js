@@ -2,14 +2,17 @@
    adjustable stroke sizes, straight lines and the .ednote file format */
 (() => {
 "use strict";
-const APP_VERSION = "6.9.2";
+const APP_VERSION = "6.9.9";
 /* COMPATIBILITY RULE: every release must open and edit files from every earlier release.
    SCHEMA is the data version written to project.json. cleanProject() upgrades any older shape
    (v3 single-PDF files go through migrateV3 first) and never drops user content. Fixture files from
    each release are checked by an automated test before shipping. */
 const SCHEMA = 8; /* 7: card text size (fs), document-to-document links (links with pins:[a,b]); 8: card paper/frame/font, text box font, workspace paper colour */
 const APP_NAME = "ED Note";
-const EDNOTE_MIME = "application/vnd.ednote+zip";
+/* v6.9.4: an .ednote file starts with its own signature line ("EDNOTE/1"), then the zip. Apps such as WhatsApp no longer
+   see a zip and rename it to .zip. Zip readers (and older ED Note versions) skip the extra line, so nothing breaks. */
+const EDNOTE_MIME = "application/vnd.ednote";
+const EDNOTE_SIG = "EDNOTE/1\n";
 const $ = s => document.querySelector(s);
 const NS = "http://www.w3.org/2000/svg";
 const pdfjsLib = window.pdfjsLib;
@@ -60,6 +63,15 @@ const PAPER_COLORS = {
   kraft:{ name:"Kraft", l:"#e9d7b2", d:"#2f281c" }, brown:{ name:"Kahverengi", l:"#d4b88f", d:"#36291b" }, mint:{ name:"Yeşil", l:"#e5f3e8", d:"#1a261f" },
   sky:{ name:"Mavi", l:"#e5eefa", d:"#1a222d" }, rose:{ name:"Pembe", l:"#fae8ee", d:"#2b1d23" }, grey:{ name:"Gri", l:"#ececea", d:"#262628" } };
 const FRAMES = { none:"Yok", thin:"İnce", thick:"Kalın" };
+/* any colour, not only the named ones: cards keep `color` (it also colours the highlight in the PDF) and may add `cc`, a free frame colour;
+   paper may be a named paper or a free colour "#rrggbb" (older versions show such paper as white) */
+const isHex = v => /^#[0-9a-f]{6}$/i.test(v || "");
+function mixHex(a, b, t){ const P = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16)), A = P(a), B = P(b); return "#" + A.map((v, i) => Math.round(v * (1 - t) + B[i] * t).toString(16).padStart(2, "0")).join(""); }
+const paperOf = k => PAPER_COLORS[k] || (isHex(k) ? { name:k.toUpperCase(), l:k.toLowerCase(), d:mixHex(k, "#1c1c1e", 0.84) } : null);
+const okPaper = k => !!paperOf(k) && k !== "white";
+const ACCENT_MORE = ["#e57373","#f06292","#ba68c8","#9575cd","#7986cb","#5c8ee6","#4fc3f7","#4dd0e1","#4db6ac","#5fb878","#aed581","#dce775","#fff176","#ffd54f","#ffb74d","#ff8a65","#d9534f","#a1887f","#90a4ae","#546e7a","#37474f","#1d1d1f"];
+const LABEL_COLORS = ["#e5484d","#f76b15","#ffc53d","#46a758","#12a594","#0090ff","#3e63dd","#8e4ec6","#d6409f","#8d8d86"];
+const PAPER_MORE = ["#fffdf5","#fff9db","#fff3e0","#fde9e4","#fce4ec","#f3e5f5","#ede7f6","#e8eaf6","#e3f2fd","#e0f7fa","#e0f2f1","#e8f5e9","#f1f8e9","#f9fbe7","#efebe9","#eceff1","#f5f5f5","#e7e2d6","#d7ccc8","#cfd8dc"];
 /* 40 fonts: scientific first, then plain, technical and warm. Files load only when a font is used. */
 const FONTS = [{"cat": "Bilimsel", "id": "stix-two-text", "name": "STIX Two", "note": "Bilimsel dergilerin yazı tipi"}, {"cat": "Bilimsel", "id": "libertinus-serif", "name": "Libertinus Serif", "note": "LaTeX belgelerine yakın"}, {"cat": "Bilimsel", "id": "tinos", "name": "Tinos", "note": "Times New Roman ile aynı ölçüler"}, {"cat": "Bilimsel", "id": "caladea", "name": "Caladea", "note": "Cambria ile aynı ölçüler"}, {"cat": "Bilimsel", "id": "gelasio", "name": "Gelasio", "note": "Georgia ile aynı ölçüler"}, {"cat": "Bilimsel", "id": "source-serif-4", "name": "Source Serif", "note": ""}, {"cat": "Bilimsel", "id": "noto-serif", "name": "Noto Serif", "note": ""}, {"cat": "Bilimsel", "id": "charis-sil", "name": "Charis", "note": ""}, {"cat": "Bilimsel", "id": "gentium-book-plus", "name": "Gentium", "note": ""}, {"cat": "Bilimsel", "id": "crimson-pro", "name": "Crimson Pro", "note": ""}, {"cat": "Bilimsel", "id": "eb-garamond", "name": "EB Garamond", "note": ""}, {"cat": "Bilimsel", "id": "libre-baskerville", "name": "Libre Baskerville", "note": ""}, {"cat": "Bilimsel", "id": "old-standard-tt", "name": "Old Standard", "note": ""}, {"cat": "Bilimsel", "id": "literata", "name": "Literata", "note": ""}, {"cat": "Bilimsel", "id": "merriweather", "name": "Merriweather", "note": ""}, {"cat": "Bilimsel", "id": "pt-serif", "name": "PT Serif", "note": ""}, {"cat": "Bilimsel", "id": "spectral", "name": "Spectral", "note": ""}, {"cat": "Bilimsel", "id": "newsreader", "name": "Newsreader", "note": ""}, {"cat": "Bilimsel", "id": "lora", "name": "Lora", "note": ""}, {"cat": "Bilimsel", "id": "alegreya", "name": "Alegreya", "note": ""}, {"cat": "Sade", "id": "carlito", "name": "Carlito", "note": "Calibri ile aynı ölçüler"}, {"cat": "Sade", "id": "arimo", "name": "Arimo", "note": "Arial ile aynı ölçüler"}, {"cat": "Sade", "id": "inter", "name": "Inter", "note": ""}, {"cat": "Sade", "id": "ibm-plex-sans", "name": "IBM Plex Sans", "note": ""}, {"cat": "Sade", "id": "source-sans-3", "name": "Source Sans", "note": ""}, {"cat": "Sade", "id": "noto-sans", "name": "Noto Sans", "note": ""}, {"cat": "Sade", "id": "fira-sans", "name": "Fira Sans", "note": ""}, {"cat": "Sade", "id": "roboto", "name": "Roboto", "note": ""}, {"cat": "Sade", "id": "open-sans", "name": "Open Sans", "note": ""}, {"cat": "Teknik", "id": "jetbrains-mono", "name": "JetBrains Mono", "note": "Eşit aralıklı"}, {"cat": "Teknik", "id": "ibm-plex-mono", "name": "IBM Plex Mono", "note": "Eşit aralıklı"}, {"cat": "Teknik", "id": "source-code-pro", "name": "Source Code Pro", "note": "Eşit aralıklı"}, {"cat": "Sıcak", "id": "nunito", "name": "Nunito", "note": ""}, {"cat": "Sıcak", "id": "quicksand", "name": "Quicksand", "note": ""}, {"cat": "Sıcak", "id": "varela-round", "name": "Varela Round", "note": ""}, {"cat": "Sıcak", "id": "comfortaa", "name": "Comfortaa", "note": ""}, {"cat": "Sıcak", "id": "shantell-sans", "name": "Shantell Sans", "note": ""}, {"cat": "Sıcak", "id": "kalam", "name": "Kalam", "note": "El yazısı"}, {"cat": "Sıcak", "id": "patrick-hand", "name": "Patrick Hand", "note": "El yazısı"}, {"cat": "Sıcak", "id": "caveat", "name": "Caveat", "note": "El yazısı"}];
 const FONT_IDS = new Set(FONTS.map(f => f.id));
@@ -87,7 +99,8 @@ const fmtDate = d => { try { return new Intl.DateTimeFormat("tr", { day:"numeric
 const stripPdf = n => String(n || "").replace(/\.pdf$/i, "");
 const ls = { get(k){ try { return localStorage.getItem(k); } catch { return null; } }, set(k, v){ try { localStorage.setItem(k, v); } catch {} } };
 const narrowMQ = window.matchMedia("(max-width: 640px), (max-height: 520px) and (max-width: 1000px)"); /* phones; tablets keep the side-by-side layout */
-const isNarrow = () => narrowMQ.matches;
+/* v6.9.8: the document and the workspace are always on one screen (phones too); narrowMQ is only used by the library */
+const isNarrow = () => false;
 
 /* the workspace is a sheet of paper with a fixed size (units: 1 = 1 pt, so it maps 1:1 to the PDF export) */
 const MM = 72 / 25.4;
@@ -178,19 +191,19 @@ $("#tabWs").onclick = () => setTab("ws");
 
 /* ================= history + save ================= */
 const Hist = { past:[], future:[], last:null };
-const SNAP_KEYS = ["docs","items","links","groups","ink","texts","comments","bookmarks","pins"];
+const SNAP_KEYS = ["docs","items","links","groups","ink","texts","comments","bookmarks","pins","stickers"];
 const snap = () => JSON.stringify(SNAP_KEYS.map(k => S.proj[k]));
 function updUndo(){ el.undo.disabled = !Hist.past.length; el.redo.disabled = !Hist.future.length; }
 function resetHistory(){ Hist.past = []; Hist.future = []; Hist.last = snap(); updUndo(); }
 function commit(){
   const s = snap();
   if (s !== Hist.last){ if (Hist.last !== null){ Hist.past.push(Hist.last); if (Hist.past.length > 50) Hist.past.shift(); } Hist.future = []; Hist.last = s; }
-  updUndo(); save();
+  updUndo(); save(); densSoon();
 }
 function restoreSnap(s){
   const d = JSON.parse(s); SNAP_KEYS.forEach((k, i) => S.proj[k] = d[i]); S.sel = null; S.selLink = null;
   renderTabs(); for (const v of S.viewers) if (!v.root.hidden && !S.proj.docs.some(x => x.fp === v.fp)) showDoc(v, S.proj.docs[0].fp);
-  renderWs(); renderAllOverlays(); save(); updUndo();
+  renderWs(); renderAllOverlays(); save(); updUndo(); densSoon();
 }
 function undo(){ if (!Hist.past.length) return; Hist.future.push(Hist.last); Hist.last = Hist.past.pop(); restoreSnap(Hist.last); }
 function redo(){ if (!Hist.future.length) return; Hist.past.push(Hist.last); Hist.last = Hist.future.pop(); restoreSnap(Hist.last); }
@@ -266,6 +279,7 @@ async function restoreFolder(){
 
 /* ================= tools ================= */
 function setTool(t){
+  if (t !== "lasso" && ISEL.on) iselClear();
   S.tool = t; document.body.dataset.tool = t;
   document.querySelectorAll("#tools button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.tool === t)));
   if (t !== "select"){ hideChip(); try { window.getSelection().removeAllRanges(); } catch {} }
@@ -277,27 +291,83 @@ const LINE_ICON = {
   free:'<svg viewBox="0 0 24 24"><path d="M3.5 15.5c2.5-6 4.5-6 6 0s3.5 6 6 0 3.5-5 5-3"/></svg>',
   line:'<svg viewBox="0 0 24 24"><path d="M4 18 20 6"/><circle cx="4" cy="18" r="1.3"/><circle cx="20" cy="6" r="1.3"/></svg>'
 };
-function savePrefs(){ ls.set("ednote:prefs", JSON.stringify({ presets:S.presets, sizeIdx:S.sizeIdx, lineMode:S.lineMode, lastFs:S.lastFs, lastBg:S.lastBg, lastFrame:S.lastFrame, lastFont:S.lastFont, textFont:S.textFont, readMode:S.readMode || "", lastLinkColor:S.lastLinkColor || "", lastLinkDash:!!S.lastLinkDash })); }
+function savePrefs(){ ls.set("ednote:prefs", JSON.stringify({ presets:S.presets, sizeIdx:S.sizeIdx, lineMode:S.lineMode, lastFs:S.lastFs, lastBg:S.lastBg, lastCc:S.lastCc || "", recentColors:S.recentColors || [], lastFrame:S.lastFrame, lastFont:S.lastFont, textFont:S.textFont, readMode:S.readMode || "", lastLinkColor:S.lastLinkColor || "", lastLinkDash:!!S.lastLinkDash, lastLinkShape:S.lastLinkShape || "", penTip:S.penTip || "", shapeSnap:S.shapeSnap !== false, penColor:S.penColor, hlColor:S.hlColor })); }
 function loadPrefs(){
   try {
     const p = JSON.parse(ls.get("ednote:prefs") || "null"); if (!p) return;
     if (p.readMode === "night" || p.readMode === "sepia") S.readMode = p.readMode;
-    if (LINK_COLORS[p.lastLinkColor]) S.lastLinkColor = p.lastLinkColor; S.lastLinkDash = !!p.lastLinkDash;
+    if (LINK_COLORS[p.lastLinkColor]) S.lastLinkColor = p.lastLinkColor; S.lastLinkDash = !!p.lastLinkDash; S.shapeSnap = p.shapeSnap !== false; if (TIPS.includes(p.penTip)) S.penTip = p.penTip; if (PEN_COLORS.includes(p.penColor) || isHex(p.penColor)) S.penColor = p.penColor; if (HL_COLORS.includes(p.hlColor) || isHex(p.hlColor)) S.hlColor = p.hlColor; if (LINK_SHAPES.includes(p.lastLinkShape)) S.lastLinkShape = p.lastLinkShape;
     for (const k of Object.keys(SIZE_DEF)){
       if (Array.isArray(p.presets && p.presets[k]) && p.presets[k].length === 3) S.presets[k] = p.presets[k].map(v => clamp(+v || SIZE_DEF[k][1], ...SIZE_RANGE[k]));
       if (p.sizeIdx && [0, 1, 2].includes(p.sizeIdx[k])) S.sizeIdx[k] = p.sizeIdx[k];
     }
     for (const k of ["pen","hl"]) if (p.lineMode && (p.lineMode[k] === "line" || p.lineMode[k] === "free")) S.lineMode[k] = p.lineMode[k];
     if (FS_STEPS.includes(p.lastFs)) S.lastFs = p.lastFs;
-    if (PAPER_COLORS[p.lastBg]) S.lastBg = p.lastBg; if (FRAMES[p.lastFrame]) S.lastFrame = p.lastFrame;
+    if (paperOf(p.lastBg)) S.lastBg = p.lastBg; if (FRAMES[p.lastFrame]) S.lastFrame = p.lastFrame;
+    if (isHex(p.lastCc)) S.lastCc = p.lastCc;
+    if (Array.isArray(p.recentColors)) S.recentColors = p.recentColors.filter(isHex).slice(0, 10);
     if (FONT_IDS.has(p.lastFont)) S.lastFont = p.lastFont; if (FONT_IDS.has(p.textFont)) S.textFont = p.textFont;
   } catch {}
 }
 const dotPx = (k, v) => Math.round(5 + 15 * toSlider(k, v) / 100);
+/* ================= pen box (v6.9.7): saved pens and highlighters, one tap to pick; shared through library.json ================= */
+const HL_MORE = ["#fff176","#ffd54f","#ffb74d","#ff8a65","#f48fb1","#ce93d8","#b39ddb","#90caf9","#80deea","#80cbc4","#a5d6a7","#c5e1a5","#e6ee9c","#bcaaa4","#b0bec5","#ffab91"];
+const PEN_SEED = {
+  "p-siyah":{ name:"Siyah", kind:"pen", color:"k", w:1.2, o:1 },
+  "p-mavi":{ name:"Mavi tükenmez", kind:"pen", color:"u", w:1.6, o:2 },
+  "p-kirmizi":{ name:"Kırmızı", kind:"pen", color:"r", w:1.6, o:3 },
+  "p-kursun":{ name:"Kurşun kalem", kind:"pen", color:"#38383c", w:2.4, tip:"pencil", o:4 },
+  "p-kaligrafi":{ name:"Kaligrafi", kind:"pen", color:"k", w:4.5, tip:"callig", o:5 },
+  "p-sari":{ name:"Sarı fosforlu", kind:"hl", color:"y", w:12, o:6 },
+  "p-yesil":{ name:"Yeşil fosforlu", kind:"hl", color:"g", w:12, o:7 }
+};
+const PEN_MAX = 8;
+function penBox(){
+  const st = libState();
+  if (!st.pensSeeded){ for (const [k, v] of Object.entries(PEN_SEED)) if (!st.pens[k]) st.pens[k] = { ...v, t:1 }; st.pensSeeded = true; libSave(st, true); }
+  return Object.entries(st.pens).filter(([, v]) => !v.del && v.kind).map(([id, v]) => ({ id, ...v })).sort((a, b) => (a.o ?? a.t) - (b.o ?? b.t));
+}
+function savePen(id, val){ const st = libState(); st.pens[id] = val ? { ...val, t:Date.now() } : { del:true, t:Date.now() }; libSave(st); }
+/* a small sample of what the pen draws: colour, thickness and tip */
+function penIcon(p){
+  const c = isHex(p.color) ? p.color : (p.kind === "hl" ? HL_HEX : PEN_HEX)[p.color] || "#1d1d1f";
+  const sq = "M4 15c3-6 5-6 8 0s5 6 8 0";
+  if (p.kind === "hl") return `<svg viewBox="0 0 24 24" class="pb-ic"><path d="${sq}" style="fill:none;stroke:${c};stroke-width:7;stroke-linecap:round;opacity:.6"/></svg>`;
+  if (p.tip === "callig") return `<svg viewBox="0 0 24 24" class="pb-ic"><path d="${outlineD([[4,15],[6,11],[8,10],[10,11.5],[12,15],[14,18.5],[16,19.5],[18,18],[20,15]].map(q => [...q, 0.5]), Math.min(5, p.w * 0.9), false, true)}" style="fill:${c};stroke:none"/></svg>`;
+  const w = clamp(p.w * 0.9, 1.4, 4.2);
+  return `<svg viewBox="0 0 24 24" class="pb-ic"><path d="${sq}" style="fill:none;stroke:${c};stroke-width:${w};stroke-linecap:round"${p.tip === "pencil" ? ' filter="url(#edPencil)"' : ""}/></svg>`;
+}
+let penEdit = false;
+function renderPenBox(kind){
+  let box = $("#penBox");
+  if (!box){ box = document.createElement("div"); box.className = "penbox"; box.id = "penBox"; box.setAttribute("role", "toolbar"); box.setAttribute("aria-label", "Kalem kutusu"); el.opts.parentNode.insertBefore(box, el.opts); }
+  box.hidden = !(kind === "pen" || kind === "hl"); if (box.hidden) return;
+  box.innerHTML = "";
+  const curCol = kind === "hl" ? S.hlColor : S.penColor, curW = curSize(kind);
+  for (const p of penBox()){
+    const on = p.kind === kind && p.color === curCol && (p.kind === "hl" || (p.tip || "") === (S.penTip || "")) && Math.abs(p.w - curW) < 0.05;
+    const b = document.createElement("button"); b.className = "pb-pen" + (on ? " on" : "") + (penEdit ? " editing" : ""); b.innerHTML = penIcon(p); b.title = `${p.name} (${fmtSize(p.w)} pt)`; b.setAttribute("aria-label", p.name); b.setAttribute("aria-pressed", String(on));
+    b.onclick = () => {
+      if (penEdit){ askText("Kalemin adı", p.name, n => { savePen(p.id, { ...p, name:n, id:undefined }); renderOpts(); }); return; }
+      if (p.kind === "hl") S.hlColor = p.color; else { S.penColor = p.color; S.penTip = p.tip || ""; }
+      S.presets[p.kind][S.sizeIdx[p.kind]] = p.w; if (S.tool !== p.kind) setTool(p.kind); savePrefs(); renderOpts();
+    };
+    if (penEdit){ const x = document.createElement("span"); x.className = "sty-del"; x.textContent = "×"; x.title = "Kutudan çıkar"; x.onclick = e => { e.stopPropagation(); savePen(p.id, null); renderOpts(); }; b.appendChild(x); }
+    box.appendChild(b);
+  }
+  const add = document.createElement("button"); add.className = "pb-add"; add.textContent = "+"; add.title = "Şu anki kalemi kutuya ekle"; add.setAttribute("aria-label", add.title);
+  add.onclick = () => {
+    if (penBox().length >= PEN_MAX){ toast(`Kutuda en çok ${PEN_MAX} kalem olabilir. Düzenle ile birini çıkar.`); return; }
+    const k = S.tool === "hl" ? "hl" : "pen", def = (k === "hl" ? "Fosforlu " : "Kalem ") + (penBox().length + 1);
+    askText("Kalemin adı", def, n => { savePen("p" + uid(), { name:n, kind:k, color:k === "hl" ? S.hlColor : S.penColor, w:curSize(k), ...(k === "pen" && S.penTip ? { tip:S.penTip } : {}), o:Date.now() }); renderOpts(); });
+  };
+  const ed = document.createElement("button"); ed.className = "pb-edit"; ed.textContent = penEdit ? "Bitti" : "Düzenle"; ed.onclick = () => { penEdit = !penEdit; renderOpts(); };
+  box.append(add, ed);
+}
 function renderOpts(){
   const sw = $("#swatches"), sz = $("#sizes"); sw.innerHTML = ""; sz.innerHTML = "";
   const t = S.tool, kind = ["hl","pen","text","eraser"].includes(t) ? t : null;
-  el.opts.hidden = !kind; if (!kind) return;
+  el.opts.hidden = !kind; if (!kind){ const pb = $("#penBox"); if (pb) pb.hidden = true; return; }
   el.opts.dataset.kind = kind;
   if (kind === "text"){
     /* font for new text boxes */
@@ -307,11 +377,33 @@ function renderOpts(){
   }
   if (kind !== "eraser"){
     const cols = kind === "hl" ? HL_COLORS : PEN_COLORS, hex = kind === "hl" ? HL_HEX : PEN_HEX, cur = kind === "hl" ? S.hlColor : S.penColor;
+    const setCol = k => { if (kind === "hl") S.hlColor = k; else S.penColor = k; savePrefs(); renderOpts(); };
     for (const k of cols){
       const b = document.createElement("button"); b.className = "sw"; b.style.background = hex[k]; b.title = CNAME[k]; b.setAttribute("aria-label", CNAME[k]); b.setAttribute("aria-pressed", String(k === cur));
-      b.onclick = () => { if (kind === "hl") S.hlColor = k; else S.penColor = k; renderOpts(); }; sw.appendChild(b);
+      b.onclick = () => setCol(k); sw.appendChild(b);
     }
+    /* v6.9.7: any colour for pen, highlighter and text */
+    const more = document.createElement("button"); more.className = "sw sw-more"; more.title = "Başka renk"; more.setAttribute("aria-label", "Başka renk");
+    if (isHex(cur)){ more.style.background = cur; more.setAttribute("aria-pressed", "true"); } else more.textContent = "+";
+    more.onclick = () => openPalette(more, { title:kind === "hl" ? "Fosforlu kalem rengi" : kind === "text" ? "Yazı rengi" : "Kalem rengi", named:cols.map(k => ({ k, hex:hex[k], name:CNAME[k] })), more:kind === "hl" ? HL_MORE : ACCENT_MORE, current:cur,
+      onPick:v => { closePop(); setCol(v); } });
+    sw.appendChild(more);
   }
+  /* v6.9.7: pen tip: ink, pencil, calligraphy */
+  if (kind === "pen"){
+    const tg = document.createElement("span"); tg.className = "seg3 tips";
+    const TI = { "":['<svg viewBox="0 0 24 24"><path d="M5 19 15.5 8.5l2 2L7 21H5z"/><path d="m15.5 8.5 2-2 2 2-2 2"/></svg>', "Mürekkep"], pencil:['<svg viewBox="0 0 24 24"><path d="M5 19l1-4L16 5l3 3L9 18z"/><path d="m14 7 3 3M6 15l3 3"/></svg>', "Kurşun kalem"], callig:['<svg viewBox="0 0 24 24"><path d="M12 3 7 11l5 10 5-10z"/><path d="M12 11v4"/></svg>', "Kaligrafi ucu"] };
+    for (const [k, [ic, nm]] of Object.entries(TI)){ const b = document.createElement("button"); b.innerHTML = ic; b.title = nm; b.setAttribute("aria-label", nm); b.setAttribute("aria-pressed", String((S.penTip || "") === k)); b.onclick = () => { S.penTip = k; savePrefs(); renderOpts(); }; tg.appendChild(b); }
+    const sep = document.createElement("span"); sep.className = "vsep"; sw.append(sep, tg);
+  }
+  /* v6.9.9: shape recognition switch */
+  if (kind === "pen" || kind === "hl"){
+    const sb = document.createElement("button"); sb.className = "chip-toggle shape-tg"; sb.setAttribute("aria-pressed", String(S.shapeSnap !== false)); sb.title = "Açıkken: çizip kalemi bir an beklet, düzgün şekle dönüşür (çizgi, ok, daire, üçgen, kare, beşgen, altıgen)";
+    sb.innerHTML = '<svg viewBox="0 0 24 24"><path d="M4 17 9 7l5 10z"/><circle cx="17" cy="9" r="3.5"/></svg><span>Şekil</span>';
+    sb.onclick = () => { S.shapeSnap = S.shapeSnap === false; savePrefs(); renderOpts(); toast(S.shapeSnap ? "Şekil tanıma açık: çiz ve kalemi bir an beklet." : "Şekil tanıma kapalı."); };
+    const sep = document.createElement("span"); sep.className = "vsep"; sw.append(sep, sb);
+  }
+  renderPenBox(kind);
   sw.hidden = kind === "eraser"; sw.nextElementSibling.hidden = kind === "eraser";
   const dots = [];
   S.presets[kind].forEach((v, i) => {
@@ -384,8 +476,9 @@ function makeViewer(idx){
   head.append(tabs, add, ol, zoom, sp);
   const pane = document.createElement("div"); pane.className = "pane vpane";
   const pages = document.createElement("div"); pages.className = "pages"; pane.appendChild(pages);
-  root.append(head, pane);
-  Object.assign(v, { root, head, tabs, pane, pagesEl:pages, pgEl:pg });
+  const dens = document.createElement("div"); dens.className = "dens"; dens.setAttribute("aria-label", "Sayfalardaki işaretler");
+  root.append(head, pane, dens);
+  Object.assign(v, { root, head, tabs, pane, pagesEl:pages, pgEl:pg, dens });
   attachPdfZoom(v);
   pane.addEventListener("scroll", () => { updatePgInfo(v); if (!el.chip.hidden && !chipDrag) positionChip(); scheduleX(); }, { passive:true });
   root.addEventListener("pointerdown", () => { if (S.av !== idx){ S.av = idx; markActive(); } }, true);
@@ -443,31 +536,52 @@ async function showDoc(v, fp){
   }
   v.fp = fp; v.pdf = pdf; v.pages = pages; v.maxW = maxW;
   v.pagesEl.innerHTML = ""; pages.forEach(p => v.pagesEl.appendChild(p.div)); v.pane.scrollTop = 0;
-  renderTabs(); fitWidth(v, true); renderViewerOverlays(v); scheduleX();
+  renderTabs(); fitWidth(v, true); renderViewerOverlays(v); scheduleX(); densSoon();
   if (!S.sample) save();
 }
 function fitWidth(v, initial){ if (!v.pdf) return; const avail = (v.pane.clientWidth || window.innerWidth / (S.viewers[1].root.hidden ? 1 : 2)) - 70; setScale(v, clamp(avail / v.maxW, 0.35, 2.2), initial); }
-function setScale(v, s, initial){
+/* v6.9.9: the spot that should stay still while zooming is held in page units (page + x, y on that page),
+   so the fixed gaps between pages and the centring of narrow pages no longer make the view drift */
+function pdfAnchor(v, clientX, clientY){
+  let best = null, bd = Infinity;
+  for (const p of v.pages){ const r = p.div.getBoundingClientRect(), d = clientY < r.top ? r.top - clientY : clientY > r.bottom ? clientY - r.bottom : 0; if (d < bd){ bd = d; best = { p, r }; } if (d === 0) break; }
+  if (!best) return null;
+  return { p:best.p, ux:(clientX - best.r.left) / v.scale, uy:(clientY - best.r.top) / v.scale, cx:clientX, cy:clientY };
+}
+function pdfRestore(v, a){
+  if (!a) return; const r = a.p.div.getBoundingClientRect();
+  v.pane.scrollLeft += r.left + a.ux * v.scale - a.cx; v.pane.scrollTop += r.top + a.uy * v.scale - a.cy;
+}
+function setScale(v, s, initial, at){
   if (!v.pdf) return;
-  const rel = initial ? 0 : v.pane.scrollTop / Math.max(1, v.pane.scrollHeight);
+  let anchor = null;
+  if (!initial){ const pr = v.pane.getBoundingClientRect(); anchor = pdfAnchor(v, at ? at.x : pr.left + pr.width / 2, at ? at.y : pr.top + pr.height / 2); if (anchor && at && at.cx != null){ anchor.cx = at.cx; anchor.cy = at.cy; } }
   v.scale = s;
   for (const p of v.pages){ p.div.style.width = Math.round(p.w * s) + "px"; p.div.style.height = Math.round(p.h * s) + "px"; p.div.style.setProperty("--scale-factor", s); p.rendered = 0; renderHL(v, p); renderCM(v, p); }
-  if (!initial) v.pane.scrollTop = rel * v.pane.scrollHeight;
+  if (!initial) pdfRestore(v, anchor);
   v.root.querySelectorAll(".tbox textarea").forEach(autosize);
-  observePages(v); updatePgInfo(v); scheduleX();
+  observePages(v); updatePgInfo(v); scheduleX(); densSoon();
 }
 /* zoom inside the document pane only: two fingers on touch screens, Ctrl + mouse wheel (or touchpad pinch) on a computer.
    While the fingers move, the pages are only stretched (fast); when they lift, the pages are drawn sharp at the new size,
    keeping the spot under the fingers in place. The rest of the app never zooms. */
-function previewPdfZoom(v, z){ v.pagesEl.style.transformOrigin = `${z.x}px ${z.y}px`; v.pagesEl.style.transform = `translate(${z.cx - z.cx0}px, ${z.cy - z.cy0}px) scale(${z.k})`; }
+/* z: { s0 start scale, k factor, ox/oy the start spot inside the page stack, cx0/cy0 start and cx/cy current spot in screen pixels } */
+function startPdfZoom(v, clientX, clientY){
+  const pr = v.pagesEl.getBoundingClientRect();
+  return { s0:v.scale, k:1, ox:clientX - pr.left, oy:clientY - pr.top, cx0:clientX, cy0:clientY, cx:clientX, cy:clientY };
+}
+function previewPdfZoom(v, z){ v.pagesEl.style.transformOrigin = `${z.ox}px ${z.oy}px`; v.pagesEl.style.transform = `translate(${z.cx - z.cx0}px, ${z.cy - z.cy0}px) scale(${z.k})`; }
 function commitPdfZoom(v, z){
-  const s = clamp(z.s0 * z.k, 0.3, 4), f = s / z.s0;
+  const s = clamp(z.s0 * z.k, 0.3, 4);
+  /* the spot that was under the fingers at the start goes to where the fingers are now */
+  const a = pdfAnchorFromStart(v, z);
   v.pagesEl.style.transform = ""; v.pagesEl.style.transformOrigin = "";
-  if (Math.abs(f - 1) < 0.01) return;
-  setScale(v, s);
-  v.pane.scrollLeft = z.x * f - z.cx; v.pane.scrollTop = z.y * f - z.cy;
+  if (Math.abs(s / z.s0 - 1) < 0.01){ if (a){ a.cx = z.cx; a.cy = z.cy; pdfRestore(v, a); } return; }
+  v.scale = z.s0; setScale(v, s, true); if (a){ a.cx = z.cx; a.cy = z.cy; pdfRestore(v, a); }
   updatePgInfo(v); scheduleX();
 }
+/* with the stretch removed, find the page spot that was under the start point */
+function pdfAnchorFromStart(v, z){ const t = v.pagesEl.style.transform; v.pagesEl.style.transform = ""; const a = pdfAnchor(v, z.cx0, z.cy0); v.pagesEl.style.transform = t; return a; }
 function attachPdfZoom(v){
   const pane = v.pane; let pz = null;
   const dist = (a, b) => Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
@@ -476,22 +590,23 @@ function attachPdfZoom(v){
     if (e.touches.length !== 2 || !v.pdf) return;
     e.preventDefault();
     if (draw && draw.where === "pdf" && draw.v === v){ cancelAnimationFrame(draw.raf); if (draw.path) draw.path.remove(); draw = null; }
-    const [a, b] = e.touches, m = mid(a, b);
-    pz = { d0:Math.max(1, dist(a, b)), s0:v.scale, k:1, cx0:m.x, cy0:m.y, cx:m.x, cy:m.y, x:pane.scrollLeft + m.x, y:pane.scrollTop + m.y };
+    const [a, b] = e.touches, mx = (a.clientX + b.clientX) / 2, my = (a.clientY + b.clientY) / 2;
+    pz = { d0:Math.max(1, dist(a, b)), ...startPdfZoom(v, mx, my) };
   }, { passive:false });
   pane.addEventListener("touchmove", e => {
     if (!pz) return; e.preventDefault(); if (e.touches.length < 2) return;
-    const [a, b] = e.touches, m = mid(a, b);
-    pz.k = clamp(pz.s0 * dist(a, b) / pz.d0, 0.3, 4) / pz.s0; pz.cx = m.x; pz.cy = m.y; previewPdfZoom(v, pz);
+    const [a, b] = e.touches;
+    pz.k = clamp(pz.s0 * dist(a, b) / pz.d0, 0.3, 4) / pz.s0; pz.cx = (a.clientX + b.clientX) / 2; pz.cy = (a.clientY + b.clientY) / 2; previewPdfZoom(v, pz);
   }, { passive:false });
   const end = e => { if (!pz || e.touches.length >= 2) return; const z = pz; pz = null; commitPdfZoom(v, z); };
   pane.addEventListener("touchend", end); pane.addEventListener("touchcancel", end);
   pane.addEventListener("wheel", e => {
     if (!(e.ctrlKey || e.metaKey) || !v.pdf) return;
     e.preventDefault();
-    const r = pane.getBoundingClientRect(), cx = e.clientX - r.left, cy = e.clientY - r.top;
-    if (!v.wz) v.wz = { s0:v.scale, k:1, cx0:cx, cy0:cy, cx, cy, x:pane.scrollLeft + cx, y:pane.scrollTop + cy };
-    const z = v.wz; z.k = clamp(z.s0 * z.k * Math.exp(-e.deltaY * (e.deltaMode ? 0.05 : 0.0025)), 0.3, 4) / z.s0; z.cx = cx; z.cy = cy;
+    if (!v.wz) v.wz = startPdfZoom(v, e.clientX, e.clientY);
+    const z = v.wz; z.k = clamp(z.s0 * z.k * Math.exp(-e.deltaY * (e.deltaMode ? 0.05 : 0.0025)), 0.3, 4) / z.s0;
+    /* the wheel zooms around the pointer: keep the start spot under it (move the origin if the pointer moved) */
+    if (Math.hypot(e.clientX - z.cx, e.clientY - z.cy) > 2){ z.cx = e.clientX; z.cy = e.clientY; }
     previewPdfZoom(v, z); clearTimeout(v.wzT); v.wzT = setTimeout(() => { const zz = v.wz; v.wz = null; if (zz) commitPdfZoom(v, zz); }, 200);
   }, { passive:false });
 }
@@ -542,6 +657,13 @@ function updatePgInfo(v){
   const mid = v.pane.scrollTop + v.pane.clientHeight / 3; let cur = 1;
   for (const p of v.pages){ if (p.div.offsetTop <= mid) cur = p.n; else break; }
   v.curPage = cur; v.pgEl.textContent = `${cur} / ${v.pages.length}`;
+  if (S.proj && !S.sample && v.fp) readTick(v.fp, cur);
+  /* reading progress for the library: the furthest page reached (the last page counts once the end is on screen) */
+  if (S.proj && !S.sample && v.fp && v.pages.length){
+    const end = v.pane.scrollTop + v.pane.clientHeight >= v.pane.scrollHeight - 8 ? v.pages.length : cur;
+    const rd = S.proj.read || (S.proj.read = {}), prev = rd[v.fp];
+    if (!prev || end > prev[0] || prev[1] !== v.pages.length){ rd[v.fp] = [Math.max(end, prev ? Math.min(prev[0], v.pages.length) : 0), v.pages.length]; save(); }
+  }
 }
 function scrollToPage(v, page, y = 0, smooth){
   const p = v.pages[page - 1]; if (!p) return;
@@ -584,7 +706,7 @@ function renderHL(v, p){
     }
   }
 }
-function renderInkP(v, p){ p.ink.innerHTML = ""; for (const st of S.proj.ink) if (st.where === "pdf" && st.doc === v.fp && st.page === p.n) p.ink.appendChild(inkPath(st)); }
+function renderInkP(v, p){ p.ink.innerHTML = ""; if (ISEL.on && ISEL.where === "pdf" && ISEL.p === p) queueMicrotask(iselDraw); for (const st of S.proj.ink) if (st.where === "pdf" && st.doc === v.fp && st.page === p.n) p.ink.appendChild(inkPath(st)); }
 function renderTextsP(v, p){ p.tx.innerHTML = ""; for (const t of S.proj.texts) if (t.doc === v.fp && t.page === p.n) p.tx.appendChild(tboxEl(t, v, p)); p.tx.querySelectorAll("textarea").forEach(autosize); }
 function renderCM(v, p){
   const s = v.scale; p.cm.innerHTML = "";
@@ -618,15 +740,44 @@ function renderAllOverlays(){ S.viewers.forEach(v => { if (v.fp && !v.root.hidde
 const renderDocPage = (fp, n) => { forPage(fp, n, (v, p) => { renderHL(v, p); renderInkP(v, p); renderTextsP(v, p); renderCM(v, p); renderNum(v, p); }); refreshReveal(); scheduleX(); };
 
 /* ================= ink ================= */
-function outlineD(pts, w, pressure){
-  const n = pts.length, rad = i => (pressure ? w * (0.35 + 1.0 * (pts[i][2] ?? 0.5)) : w) / 2;
-  if (n === 1){ const [x, y] = pts[0], r = r2(rad(0)); return `M${r2(x - r)},${y}a${r},${r} 0 1,0 ${r2(2*r)},0a${r},${r} 0 1,0 ${r2(-2*r)},0Z`; }
+/* the two edges of a filled stroke. Width comes from pressure, and for the calligraphy nib (v6.9.7) from the direction:
+   a flat nib held at 45° draws thin strokes one way and wide strokes across it */
+function outlineSides(pts, w, pressure, nib){
+  const n = pts.length, dir = [];
+  for (let i = 0; i < n; i++){ const a = pts[Math.max(0, i - 1)], b = pts[Math.min(n - 1, i + 1)]; let dx = b[0] - a[0], dy = b[1] - a[1]; const len = Math.hypot(dx, dy) || 1; dir.push([dx / len, dy / len]); }
+  let rr = pts.map((q, i) => {
+    let r = (pressure ? w * (0.35 + 1.0 * (q[2] ?? 0.5)) : w) / 2;
+    if (nib){ const ang = Math.atan2(dir[i][1], dir[i][0]); r *= 0.16 + 0.84 * Math.abs(Math.sin(ang - Math.PI / 4)); }
+    return r;
+  });
+  if (nib && n > 2) rr = rr.map((r, i) => (rr[Math.max(0, i - 1)] + 2 * r + rr[Math.min(n - 1, i + 1)]) / 4);
   const L = [], R = [];
-  for (let i = 0; i < n; i++){ const a = pts[Math.max(0, i - 1)], b = pts[Math.min(n - 1, i + 1)]; let dx = b[0] - a[0], dy = b[1] - a[1]; const len = Math.hypot(dx, dy) || 1; dx /= len; dy /= len; const r = rad(i); L.push([r2(pts[i][0] - dy * r), r2(pts[i][1] + dx * r)]); R.push([r2(pts[i][0] + dy * r), r2(pts[i][1] - dx * r)]); }
-  const rs = r2(rad(0)), re = r2(rad(n - 1)); let d = `M${L[0][0]},${L[0][1]}`;
-  for (let i = 1; i < n; i++) d += `L${L[i][0]},${L[i][1]}`;
-  d += `A${re},${re} 0 0,1 ${R[n-1][0]},${R[n-1][1]}`; for (let i = n - 2; i >= 0; i--) d += `L${R[i][0]},${R[i][1]}`;
-  return d + `A${rs},${rs} 0 0,1 ${L[0][0]},${L[0][1]}Z`;
+  for (let i = 0; i < n; i++){ const [dx, dy] = dir[i], r = rr[i]; L.push([r2(pts[i][0] - dy * r), r2(pts[i][1] + dx * r)]); R.push([r2(pts[i][0] + dy * r), r2(pts[i][1] - dx * r)]); }
+  return { L, R, rs:r2(rr[0]), re:r2(rr[n - 1]) };
+}
+function outlineD(pts, w, pressure, nib){
+  const n = pts.length;
+  if (n === 1){ const [x, y] = pts[0], r = r2((pressure ? w * (0.35 + 1.0 * (pts[0][2] ?? 0.5)) : w) / 2 * (nib ? 0.6 : 1)); return `M${r2(x - r)},${y}a${r},${r} 0 1,0 ${r2(2*r)},0a${r},${r} 0 1,0 ${r2(-2*r)},0Z`; }
+  const { L, R, rs, re } = outlineSides(pts, w, pressure, nib);
+  /* both edges are drawn as smooth curves through the midpoints (no visible corners) */
+  const curve = P => { let d = ""; for (let i = 1; i < P.length - 1; i++) d += `Q${P[i][0]},${P[i][1]} ${r2((P[i][0] + P[i+1][0]) / 2)},${r2((P[i][1] + P[i+1][1]) / 2)}`; return d + `L${P[P.length-1][0]},${P[P.length-1][1]}`; };
+  const Rb = R.slice().reverse();
+  return `M${L[0][0]},${L[0][1]}` + curve(L) + `A${re},${re} 0 0,1 ${R[n-1][0]},${R[n-1][1]}` + curve(Rb) + `A${rs},${rs} 0 0,1 ${L[0][0]},${L[0][1]}Z`;
+}
+/* ink colour: a named colour or (v6.9.7) any "#rrggbb" */
+const inkHex = st => isHex(st.color) ? st.color : st.kind === "hl" ? HL_HEX[st.color] || HL_HEX.y : PEN_HEX[st.color] || PEN_HEX.k;
+const TIPS = ["pencil", "callig"];
+const filled = st => st.kind !== "hl" && (st.tip === "callig" || (st.pr && st.tip !== "pencil"));
+/* ---- pen smoothing: a One Euro filter on the points (steady when slow, quick when fast) and a gentle filter on pressure ---- */
+function oneEuro(minCut = 2.5, beta = 0.025, dCut = 1.2){
+  const a = (fc, dt) => { const tau = 1 / (2 * Math.PI * fc); return 1 / (1 + tau / dt); };
+  let x = null, dx = 0, t0 = 0;
+  return (v, t, k) => { /* v: value, t: ms, k: screen pixels per unit (so the feel is the same at any zoom) */
+    if (x === null){ x = v; t0 = t; return v; }
+    const dt = (t - t0 > 0.5 ? Math.min(t - t0, 50) : 4) / 1000; t0 = t; /* same time stamp twice: assume a 240 Hz pen */
+    const d = (v - x) / dt; dx = dx + a(dCut, dt) * (d - dx);
+    x = x + a(minCut + beta * Math.abs(dx) * k, dt) * (v - x); return x;
+  };
 }
 function polyD(pts){
   if (pts.length === 1) return `M${pts[0][0]},${pts[0][1]}l0.01,0`;
@@ -635,15 +786,18 @@ function polyD(pts){
   const l = pts[pts.length - 1]; return d + `L${l[0]},${l[1]}`;
 }
 /* pressure strokes are filled outlines; everything else is a round-capped stroke, which stays clean at any width */
-const strokeD = st => st.kind === "hl" || !st.pr ? polyD(st.pts) : outlineD(st.pts, st.w, st.pr);
+/* shapes (v6.9.9) keep sharp corners: drawn with straight segments */
+const linD = pts => pts.length ? `M${pts[0][0]},${pts[0][1]}` + pts.slice(1).map(q => `L${q[0]},${q[1]}`).join("") : "";
+const inkD = st => st.sh ? linD(st.pts) : polyD(st.pts);
+const strokeD = st => filled(st) ? outlineD(st.pts, st.w, st.pr, st.tip === "callig") : inkD(st);
 function inkPath(st){
-  const path = document.createElementNS(NS, "path");
-  if (st.kind === "hl"){ path.setAttribute("d", polyD(st.pts)); path.setAttribute("class", "ihl hc-" + st.color); path.setAttribute("stroke-width", st.w); }
-  else if (!st.pr){ path.setAttribute("d", polyD(st.pts)); path.setAttribute("class", "ips ik-" + st.color); path.setAttribute("stroke-width", st.w); }
-  else { path.setAttribute("d", outlineD(st.pts, st.w, st.pr)); path.setAttribute("class", "ipen ik-" + st.color); }
+  const path = document.createElementNS(NS, "path"), hex = isHex(st.color), tip = st.tip === "pencil" ? " ipencil" : "";
+  if (st.kind === "hl"){ path.setAttribute("d", inkD(st)); path.setAttribute("class", "ihl hc-" + (hex ? "x" : st.color)); path.setAttribute("stroke-width", st.w); if (hex) path.style.stroke = st.color; }
+  else if (!filled(st)){ path.setAttribute("d", inkD(st)); path.setAttribute("class", "ips ik-" + (hex ? "x" : st.color) + tip); path.setAttribute("stroke-width", st.w); if (hex) path.style.stroke = st.color; }
+  else { path.setAttribute("d", outlineD(st.pts, st.w, st.pr, st.tip === "callig")); path.setAttribute("class", "ipen ik-" + (hex ? "x" : st.color)); if (hex) path.style.fill = st.color; }
   path.dataset.id = st.id; recAttr(path, st); return path;
 }
-function renderWsInk(){ el.wsInk.innerHTML = ""; if (!S.proj) return; for (const st of S.proj.ink) if (st.where === "ws" && st.space === S.space) el.wsInk.appendChild(inkPath(st)); }
+function renderWsInk(){ el.wsInk.innerHTML = ""; if (!S.proj) return; if (ISEL.on && ISEL.where === "ws") queueMicrotask(iselDraw); for (const st of S.proj.ink) if (st.where === "ws" && st.space === S.space) el.wsInk.appendChild(inkPath(st)); }
 function distSeg(px, py, a, b){ const dx = b[0] - a[0], dy = b[1] - a[1], l2 = dx*dx + dy*dy, t = l2 ? clamp(((px - a[0]) * dx + (py - a[1]) * dy) / l2, 0, 1) : 0; return Math.hypot(px - (a[0] + t * dx), py - (a[1] + t * dy)); }
 function strokeHit(st, x, y, r){ const pts = st.pts, pad = r + st.w / 2; if (pts.length === 1) return Math.hypot(x - pts[0][0], y - pts[0][1]) <= pad; for (let i = 1; i < pts.length; i++) if (distSeg(x, y, pts[i-1], pts[i]) <= pad) return true; return false; }
 
@@ -654,13 +808,17 @@ function pagePoint(v, p, e){ const r = p.div.getBoundingClientRect(); return [ r
 function pageAt(v, e){ const d = e.target.closest && e.target.closest(".page"); return d && v.pagesEl.contains(d) ? v.pages[+d.dataset.page - 1] : null; }
 function beginStroke(e, where, v, p, pt){
   const kind = S.tool === "hl" ? "hl" : "pen";
-  const st = stamp({ id:uid(), where, kind, color: kind === "hl" ? S.hlColor : S.penColor, w:curSize(kind), pr: kind === "pen" && e.pointerType === "pen", pts:[] });
+  const st = stamp({ id:uid(), where, kind, color: kind === "hl" ? S.hlColor : S.penColor, w:curSize(kind), ...(kind === "pen" && TIPS.includes(S.penTip) ? { tip:S.penTip } : {}), pr: kind === "pen" && e.pointerType === "pen", pts:[] });
   if (where === "pdf"){ st.doc = v.fp; st.page = p.n; } else st.space = S.space;
   if (where === "ws") pt = clampPt(pt);
   st.pts.push([pt[0], pt[1], r2(e.pressure || 0.5)]);
   const path = inkPath(st); (where === "pdf" ? p.ink : el.wsInk).appendChild(path);
+  /* pen and finger get smoothed; a mouse is already steady */
+  const smooth = e.pointerType === "pen" || e.pointerType === "touch";
   draw = { mode:"stroke", st, path, where, v, p, id:e.pointerId, start:st.pts[0], straight:false, sx:e.clientX, sy:e.clientY,
+    fx:smooth ? oneEuro() : null, fy:smooth ? oneEuro() : null, fp:e.pressure || 0.5, raw:null, pred:null, k:where === "pdf" ? v.scale : view().s,
     srcCard: where === "ws" && e.target.closest && e.target.closest(".card") ? e.target.closest(".card").dataset.id : null };
+  if (draw.fx){ draw.fx(pt[0], e.timeStamp, draw.k); draw.fy(pt[1], e.timeStamp, draw.k); }
   if (S.lineMode[kind] === "line" || e.shiftKey) makeStraight();
 }
 /* ======= ink links: a pen stroke from a card to the document (or back, or to another card) becomes a link ======= */
@@ -696,7 +854,7 @@ function tryInkLink(e){
   const d = draw, t = inkLinkTarget(e); clearLinkPreview(); if (!t) return false;
   let link, pin = null;
   let pin2 = null;
-  const look = { ...(S.lastLinkColor ? { color:S.lastLinkColor } : {}), ...(S.lastLinkDash ? { dash:true } : {}) };
+  const look = { ...(S.lastLinkColor ? { color:S.lastLinkColor } : {}), ...(S.lastLinkDash ? { dash:true } : {}), ...(S.lastLinkShape ? { shape:S.lastLinkShape } : {}) };
   if (d.where === "pdf" && t.ws){
     const p = screenToPlane(e.clientX, e.clientY); pin = makePin(d.v, d.p, d.start);
     link = { id:uid(), pin:pin.id, at:{ space:S.space, x:r2(p.x), y:r2(p.y) }, heads:"end", ...look };
@@ -717,12 +875,123 @@ function tryInkLink(e){
     pin = makePin(v, p, pagePoint(v, p, e)); link = { id:uid(), a:d.srcCard, anchor:{ type:"pin", id:pin.id }, to:"anchor" };
   }
   cancelAnimationFrame(d.raf); d.path.remove(); draw = null;
-  if (S.lastLinkColor) link.color = S.lastLinkColor; if (S.lastLinkDash) link.dash = true;
+  if (S.lastLinkColor) link.color = S.lastLinkColor; if (S.lastLinkDash) link.dash = true; if (S.lastLinkShape) link.shape = S.lastLinkShape;
   S.proj.links.push(link); if (pin) renderDocPage(pin.doc, pin.page); if (pin2) renderDocPage(pin2.doc, pin2.page);
   if (link.pins){ S.selLink = null; commit(); scheduleX(); toast("İki belge birbirine bağlandı. İşarete dokununca karşı uca gidersin."); return true; }
   if (link.pin){ growSheet(link.at.x - 20, link.at.y - 20, link.at.x + 20, link.at.y + 20); renderSheet(); S.selLink = null; drawLinks(); commit(); toast("Belgedeki yer masadaki noktaya bağlandı. İki uçtaki işarete dokununca karşı uca gidersin.", null, 4500); return true; }
   S.sel = link.a; S.selLink = null; renderWs(); commit(); toast(pin ? "Kart belgedeki yere bağlandı" : "Kartlar bağlandı");
   return true;
+}
+/* ================= shape recognition (v6.9.9): draw, then hold the pen still for a moment =================
+   Only the hold turns a stroke into a shape, so handwriting (an "O", a "D") is never changed by itself.
+   The stroke is resampled and its turning is measured: corners are where the direction changes sharply in a short stretch,
+   a round shape turns evenly. Open strokes become a line or an arrow; closed ones a circle, ellipse, triangle, rectangle/square,
+   quadrilateral, pentagon or hexagon (five and six sides become regular). */
+function resample(pts, n){
+  const P = pts.map(q => [q[0], q[1]]); let L = 0; for (let i = 1; i < P.length; i++) L += Math.hypot(P[i][0] - P[i - 1][0], P[i][1] - P[i - 1][1]);
+  if (L <= 0) return null;
+  const step = L / (n - 1), out = [P[0].slice()]; let acc = 0;
+  for (let i = 1; i < P.length; i++){
+    let a = P[i - 1], b = P[i], d = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    while (acc + d >= step && out.length < n){ const t = (step - acc) / d, q = [a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1])]; out.push(q); a = q; d = Math.hypot(b[0] - a[0], b[1] - a[1]); acc = 0; }
+    acc += d;
+  }
+  while (out.length < n) out.push(P[P.length - 1].slice());
+  return { pts:out, L };
+}
+const angOf = (a, b) => Math.atan2(b[1] - a[1], b[0] - a[0]);
+const angDiff = (a, b) => { let d = b - a; while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI; return d; };
+function findCorners(R, closed){
+  const n = R.length, th = [];
+  for (let i = 0; i < n; i++){
+    const a = R[(i - 3 + n) % n], b = R[i], c = R[(i + 3) % n];
+    th.push(!closed && (i < 3 || i > n - 4) ? 0 : Math.abs(angDiff(angOf(a, b), angOf(b, c))));
+  }
+  const out = [];
+  for (let i = 0; i < n; i++){
+    if (th[i] < 0.55) continue; /* about 30° within a short stretch */
+    const prev = th[(i - 1 + n) % n], next = th[(i + 1) % n]; if (th[i] < prev || th[i] < next) continue;
+    if (out.length && i - out[out.length - 1] < 4){ if (th[i] > th[out[out.length - 1]]) out[out.length - 1] = i; continue; }
+    out.push(i);
+  }
+  if (closed && out.length > 1 && out[0] + n - out[out.length - 1] < 4){ if (th[out[0]] < th[out[out.length - 1]]) out.shift(); else out.pop(); }
+  return out;
+}
+function regularPoly(n, cx, cy, r, rot){ const out = []; for (let i = 0; i <= n; i++){ const a = rot + i * 2 * Math.PI / n; out.push([cx + r * Math.cos(a), cy + r * Math.sin(a)]); } return out; }
+function recognizeShape(raw){
+  const xs = raw.map(q => q[0]), ys = raw.map(q => q[1]), x1 = Math.min(...xs), x2 = Math.max(...xs), y1 = Math.min(...ys), y2 = Math.max(...ys), diag = Math.hypot(x2 - x1, y2 - y1);
+  if (diag <= 0) return null;
+  const rs = resample(raw, 72); if (!rs) return null; const R = rs.pts, L = rs.L;
+  const A = R[0], B = R[R.length - 1], gap = Math.hypot(B[0] - A[0], B[1] - A[1]);
+  const closed = gap < Math.max(0.22 * diag, L * 0.08);
+  if (!closed){
+    if (gap / L > 0.9) return { name:"Çizgi", pts:[A, B] };
+    /* arrow drawn in one go: a long shaft, then a short head at the tip */
+    const C = findCorners(R, false);
+    if (C.length >= 1){
+      const tipI = C[0], tip = R[tipI], shaft = Math.hypot(tip[0] - A[0], tip[1] - A[1]);
+      let tail = 0; for (let i = tipI + 1; i < R.length; i++) tail += Math.hypot(R[i][0] - R[i - 1][0], R[i][1] - R[i - 1][1]);
+      const nearTip = R.slice(tipI).every(q => Math.hypot(q[0] - tip[0], q[1] - tip[1]) < shaft * 0.5);
+      let straight = 0; for (let i = 1; i <= tipI; i++) straight += Math.hypot(R[i][0] - R[i - 1][0], R[i][1] - R[i - 1][1]);
+      if (nearTip && tail < shaft * 1.2 && shaft / Math.max(1, straight) > 0.9 && shaft > diag * 0.55){
+        const a = angOf(A, tip), h = clamp(shaft * 0.2, 6, shaft * 0.45), w1 = [tip[0] - h * Math.cos(a - 0.5), tip[1] - h * Math.sin(a - 0.5)], w2 = [tip[0] - h * Math.cos(a + 0.5), tip[1] - h * Math.sin(a + 0.5)];
+        return { name:"Ok", pts:[A, tip, w1, tip, w2] };
+      }
+    }
+    return null;
+  }
+  const C = findCorners(R, true);
+  /* drop corners where the outline barely turns (noise on a straight side) */
+  for (let again = true; again && C.length > 2;){ again = false; let wk = -1, wa = 9;
+    C.forEach((ci, k) => { const a = R[C[(k - 1 + C.length) % C.length]], b = R[ci], c = R[C[(k + 1) % C.length]], t = Math.abs(angDiff(angOf(a, b), angOf(b, c))); if (t < wa){ wa = t; wk = k; } });
+    if (wa < 0.42){ C.splice(wk, 1); again = true; } }
+  const cx = R.reduce((s, q) => s + q[0], 0) / R.length, cy = R.reduce((s, q) => s + q[1], 0) / R.length;
+  if (C.length <= 1){
+    /* round: circle when nearly as wide as tall, otherwise an ellipse in the drawn box */
+    const rx = (x2 - x1) / 2, ry = (y2 - y1) / 2, ecx = (x1 + x2) / 2, ecy = (y1 + y2) / 2;
+    if (Math.min(rx, ry) / Math.max(rx, ry) > 0.8){ const r = (rx + ry) / 2, out = []; for (let i = 0; i <= 72; i++){ const a = i / 72 * 2 * Math.PI; out.push([ecx + r * Math.cos(a), ecy + r * Math.sin(a)]); } return { name:"Daire", pts:out, round:true }; }
+    const out = []; for (let i = 0; i <= 72; i++){ const a = i / 72 * 2 * Math.PI; out.push([ecx + rx * Math.cos(a), ecy + ry * Math.sin(a)]); } return { name:"Elips", pts:out, round:true };
+  }
+  /* corners only count when the parts between them are straight; a wobbly circle can show false corners but curved sides */
+  const bent = C.some((ci, k) => { const cj = C[(k + 1) % C.length], P = R[ci], Q = R[cj], len = Math.hypot(Q[0] - P[0], Q[1] - P[1]); if (len < 1) return false;
+    let mx = 0; for (let i = ci; i !== cj; i = (i + 1) % R.length){ const q = R[i]; mx = Math.max(mx, Math.abs((Q[0] - P[0]) * (P[1] - q[1]) - (P[0] - q[0]) * (Q[1] - P[1])) / len); } return mx / len > 0.1; });
+  if (bent){ const rx = (x2 - x1) / 2, ry = (y2 - y1) / 2, ecx = (x1 + x2) / 2, ecy = (y1 + y2) / 2, r = (rx + ry) / 2, round = Math.min(rx, ry) / Math.max(rx, ry) > 0.8, out = [];
+    for (let i = 0; i <= 72; i++){ const a = i / 72 * 2 * Math.PI; out.push([ecx + (round ? r : rx) * Math.cos(a), ecy + (round ? r : ry) * Math.sin(a)]); } return { name:round ? "Daire" : "Elips", pts:out, round:true }; }
+  const V = C.map(i => R[i]), n = V.length;
+  if (n === 2) return null;
+  if (n === 3){
+    const sides = [0, 1, 2].map(i => Math.hypot(V[(i + 1) % 3][0] - V[i][0], V[(i + 1) % 3][1] - V[i][1])), mx = Math.max(...sides), mn = Math.min(...sides);
+    if (mn / mx > 0.86){ const tcx = (V[0][0] + V[1][0] + V[2][0]) / 3, tcy = (V[0][1] + V[1][1] + V[2][1]) / 3, r = V.reduce((s, q) => s + Math.hypot(q[0] - tcx, q[1] - tcy), 0) / 3; return { name:"Eşkenar üçgen", pts:regularPoly(3, tcx, tcy, r, angOf([tcx, tcy], V[0])) }; }
+    return { name:"Üçgen", pts:[...V, V[0]] };
+  }
+  if (n === 4){
+    const ang = [0, 1, 2, 3].map(i => { const a = V[(i + 3) % 4], b = V[i], c = V[(i + 1) % 4]; return Math.abs(Math.PI - Math.abs(angDiff(angOf(b, a), angOf(b, c)))); });
+    const rectish = ang.every(a => Math.abs(a - Math.PI / 2) < 0.3);
+    if (rectish){
+      /* rectangle along the mean direction of its sides; straight to the screen when nearly level */
+      let rot = 0, k = 0; for (let i = 0; i < 4; i++){ let a = angOf(V[i], V[(i + 1) % 4]); a = ((a % (Math.PI / 2)) + Math.PI / 2) % (Math.PI / 2); if (a > Math.PI / 4) a -= Math.PI / 2; rot += a; k++; } rot /= k;
+      if (Math.abs(rot) < 0.14) rot = 0;
+      const c = Math.cos(-rot), sn = Math.sin(-rot), loc = V.map(q => [(q[0] - cx) * c - (q[1] - cy) * sn, (q[0] - cx) * sn + (q[1] - cy) * c]);
+      let w = (Math.max(...loc.map(q => q[0])) - Math.min(...loc.map(q => q[0]))) / 2, h = (Math.max(...loc.map(q => q[1])) - Math.min(...loc.map(q => q[1]))) / 2;
+      const square = Math.min(w, h) / Math.max(w, h) > 0.88; if (square) w = h = (w + h) / 2;
+      const c2 = Math.cos(rot), s2 = Math.sin(rot), corners = [[-w, -h], [w, -h], [w, h], [-w, h], [-w, -h]].map(q => [cx + q[0] * c2 - q[1] * s2, cy + q[0] * s2 + q[1] * c2]);
+      return { name:square ? "Kare" : "Dikdörtgen", pts:corners };
+    }
+    return { name:"Dörtgen", pts:[...V, V[0]] };
+  }
+  if (n === 5 || n === 6){ const r = V.reduce((s, q) => s + Math.hypot(q[0] - cx, q[1] - cy), 0) / n; return { name:n === 5 ? "Beşgen" : "Altıgen", pts:regularPoly(n, cx, cy, r, angOf([cx, cy], V[0])) }; }
+  return null;
+}
+function trySnapShape(){
+  if (!draw || draw.mode !== "stroke" || draw.straight || draw.snapped || S.shapeSnap === false) return;
+  const st = draw.st, xs = st.pts.map(q => q[0]), ys = st.pts.map(q => q[1]);
+  if (st.pts.length < 6 || Math.hypot(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)) * draw.k < 28) return; /* too small: probably writing */
+  const res = recognizeShape(draw.rp && draw.rp.length > 5 ? draw.rp : st.pts); if (!res) return;
+  const pr = st.pts.reduce((s, q) => s + (q[2] ?? 0.5), 0) / st.pts.length;
+  st.pts = res.pts.map(q => [r2(q[0]), r2(q[1]), r2(pr)]); st.pr = false; if (st.tip === "callig") delete st.tip; if (!res.round) st.sh = 1;
+  draw.snapped = true; const np = inkPath(st); draw.path.replaceWith(np); draw.path = np;
+  try { navigator.vibrate && navigator.vibrate(12); } catch {}
+  toast(res.name);
 }
 function makeStraight(){ draw.straight = true; draw.st.pr = false; draw.st.pts = [draw.start]; const np = inkPath(draw.st); draw.path.replaceWith(np); draw.path = np; }
 /* snap a straight line to 0/45/90 degrees when it is within 6 degrees of one */
@@ -732,8 +1001,14 @@ function snapLine(a, b){
   if (Math.abs(ang - near) > 6 * Math.PI / 180) return b;
   return [r2(a[0] + Math.cos(near) * len), r2(a[1] + Math.sin(near) * len)];
 }
-function extendStroke(pt, pressure, ev){
+function extendStroke(pt, pressure, ev, t){
+  if (draw.snapped) return;
   const st = draw.st; if (draw.where === "ws") pt = clampPt(pt);
+  if (!draw.straight) (draw.rp || (draw.rp = [draw.start.slice(0, 2)])).push([pt[0], pt[1]]); /* unsmoothed copy for shape recognition */
+  /* holding the pen still restarts nothing; moving it more than a few pixels does */
+  if (S.shapeSnap !== false && !draw.straight){ const h = draw.hold; if (!h || Math.hypot(pt[0] - h[0], pt[1] - h[1]) * draw.k > 5){ draw.hold = [pt[0], pt[1]]; clearTimeout(draw.holdT); const d0 = draw; draw.holdT = setTimeout(() => { if (draw === d0) trySnapShape(); }, 600); } }
+  if (pressure != null && pressure > 0){ draw.fp = draw.fp + 0.35 * (pressure - draw.fp); pressure = draw.fp; } /* steady pressure: no wobbly line width */
+  if (draw.fx && !draw.straight){ const tt = t || performance.now(); draw.raw = [pt[0], pt[1]]; pt = [r2(draw.fx(pt[0], tt, draw.k)), r2(draw.fy(pt[1], tt, draw.k))]; }
   if (!draw.straight && ev && ev.shiftKey) makeStraight();
   if (draw.straight){
     const b = snapLine(draw.start, pt); st.pts = [draw.start, [b[0], b[1], draw.start[2]]];
@@ -743,10 +1018,26 @@ function extendStroke(pt, pressure, ev){
   const last = st.pts[st.pts.length - 1], minD = draw.where === "pdf" ? 0.6 / draw.v.scale : 0.6 / view().s;
   if (Math.hypot(pt[0] - last[0], pt[1] - last[1]) < minD) return;
   st.pts.push([pt[0], pt[1], r2(pressure || 0.5)]);
-  if (!draw.raf) draw.raf = requestAnimationFrame(() => { if (!draw || draw.mode !== "stroke") return; draw.raf = 0; draw.path.setAttribute("d", strokeD(st)); });
+  paintStroke();
+}
+/* draws the stroke so far; a predicted point (where the pen is about to be) hides the delay but is never saved */
+function paintStroke(){
+  if (draw.raf) return;
+  draw.raf = requestAnimationFrame(() => {
+    if (!draw || draw.mode !== "stroke") return; draw.raf = 0; const st = draw.st;
+    if (draw.pred && !draw.straight && st.pts.length > 1){ const l = st.pts[st.pts.length - 1]; draw.path.setAttribute("d", strokeD({ ...st, pts:[...st.pts, [draw.pred[0], draw.pred[1], l[2]]] })); }
+    else draw.path.setAttribute("d", strokeD(st));
+  });
+}
+function predictStroke(e, toPt){
+  if (!draw || draw.mode !== "stroke" || draw.straight || !draw.fx || !e.getPredictedEvents) return;
+  const pe = e.getPredictedEvents(); if (!pe.length){ draw.pred = null; return; }
+  const q = toPt(pe[pe.length - 1]); draw.pred = q; paintStroke();
 }
 function endStroke(){
-  const st = draw.st; cancelAnimationFrame(draw.raf);
+  const st = draw.st; cancelAnimationFrame(draw.raf); draw.pred = null; clearTimeout(draw.holdT);
+  /* the filter trails the pen a little: finish exactly where the pen was lifted */
+  if (draw.raw && !draw.straight && !draw.snapped && st.pts.length){ const l = st.pts[st.pts.length - 1]; if (Math.hypot(draw.raw[0] - l[0], draw.raw[1] - l[1]) > 0.05) st.pts.push([r2(draw.raw[0]), r2(draw.raw[1]), l[2]]); }
   draw.path.setAttribute("d", strokeD(st));
   S.proj.ink.push(st); const fp = draw.v && draw.v.fp, n = draw.p && draw.p.n, wsStroke = draw.where === "ws"; draw = null;
   if (wsStroke){ const xs = st.pts.map(q => q[0]), ys = st.pts.map(q => q[1]); growSheet(Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)); }
@@ -766,8 +1057,9 @@ function attachPaneHandlers(v){
   pane.addEventListener("pointerdown", e => {
     if (e.pointerType === "pen" && !S.penOnly) setPenOnly(true, true);
     if (S.tool === "select") return;
-    if (e.target.closest(".tbox,.pnum,.cpin")) return;
+    if (e.target.closest(".tbox,.pnum,.cpin,.isel")) return;
     if (e.button && e.button !== 0) return;
+    if (ISEL.on) iselClear();
     if (e.pointerType === "touch" && S.penOnly){ v.touchScroll = { id:e.pointerId, x:e.clientX, y:e.clientY, st:pane.scrollTop, sl:pane.scrollLeft }; pane.setPointerCapture(e.pointerId); return; }
     const p = pageAt(v, e); if (!p) return;
     e.preventDefault(); pane.setPointerCapture(e.pointerId);
@@ -782,7 +1074,7 @@ function attachPaneHandlers(v){
     if (ts && e.pointerId === ts.id){ pane.scrollTop = ts.st - (e.clientY - ts.y); pane.scrollLeft = ts.sl - (e.clientX - ts.x); return; }
     if (!draw || draw.id !== e.pointerId || draw.where !== "pdf" || draw.v !== v) return;
     const p = draw.p;
-    if (draw.mode === "stroke"){ for (const ce of pointsFrom(e)) extendStroke(pagePoint(v, p, ce), ce.pressure, e); linkPreview(e); }
+    if (draw.mode === "stroke"){ for (const ce of pointsFrom(e)) extendStroke(pagePoint(v, p, ce), ce.pressure, e, ce.timeStamp); predictStroke(e, ce => pagePoint(v, p, ce)); linkPreview(e); }
     else if (draw.mode === "erase") for (const ce of pointsFrom(e)) eraseAt("pdf", v, p, pagePoint(v, p, ce));
     else if (draw.mode === "lasso"){ const pt = pagePoint(v, p, e), l = draw.pts[draw.pts.length - 1]; if (Math.hypot(pt[0] - l[0], pt[1] - l[1]) > 1.5 / v.scale){ draw.pts.push(pt); draw.path.setAttribute("d", polyD(draw.pts) + "Z"); } }
   });
@@ -826,9 +1118,93 @@ document.addEventListener("pointermove", e => {
   ring.hidden = false; ring.style.width = ring.style.height = d + "px"; ring.style.left = e.clientX + "px"; ring.style.top = e.clientY + "px";
 }, { passive:true });
 
-/* ================= lasso -> image ================= */
+/* ================= selecting pen drawings with the lasso (v6.9.8): move, resize, recolour, duplicate, delete =================
+   A lasso around strokes selects them (in the PDF or on the workspace). Drag inside the frame to move, drag a corner to resize.
+   A lasso around no strokes on a PDF page still copies the region to the workspace as a picture. */
+let ISEL = { on:false };
+function inPoly(x, y, P){ let c = false; for (let i = 0, j = P.length - 1; i < P.length; j = i++){ const [xi, yi] = P[i], [xj, yj] = P[j]; if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) c = !c; } return c; }
+const strokesIn = (poly, filt) => S.proj.ink.filter(s => filt(s) && s.pts.filter(q => inPoly(q[0], q[1], poly)).length >= Math.max(1, s.pts.length * 0.6));
+const iselStrokes = () => { const ids = new Set(ISEL.ids || []); return S.proj.ink.filter(s => ids.has(s.id)); };
+const iselSvg = () => ISEL.where === "pdf" ? ISEL.p && ISEL.p.ink : el.wsInk;
+const iselScale = () => ISEL.where === "pdf" ? ISEL.v.scale : view().s;
+const iselPoint = ev => { if (ISEL.where === "pdf") return pagePoint(ISEL.v, ISEL.p, ev); const q = screenToPlane(ev.clientX, ev.clientY); return [q.x, q.y]; };
+function iselBox(ss){
+  let x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity;
+  for (const s of ss){ const pad = s.w / 2; for (const q of s.pts){ x1 = Math.min(x1, q[0] - pad); y1 = Math.min(y1, q[1] - pad); x2 = Math.max(x2, q[0] + pad); y2 = Math.max(y2, q[1] + pad); } }
+  return { x:x1, y:y1, w:x2 - x1, h:y2 - y1 };
+}
+function iselStart(ctx){ iselClear(); ISEL = { ...ctx, on:true }; iselDraw(); }
+function iselClear(){ if (!ISEL.on) return; ISEL = { on:false }; document.querySelectorAll("g.isel").forEach(g => g.remove()); iselBar.hidden = true; }
+function iselDraw(){
+  document.querySelectorAll("g.isel").forEach(g => g.remove());
+  const svg = iselSvg(), ss = ISEL.on ? iselStrokes() : [];
+  if (!ISEL.on || !svg || !document.contains(svg) || !ss.length){ if (ISEL.on && !ss.length) iselClear(); iselBar.hidden = true; return; }
+  const b = ISEL.box = iselBox(ss), k = 1 / iselScale(), g = document.createElementNS(NS, "g"); g.setAttribute("class", "isel");
+  const rect = document.createElementNS(NS, "rect"); for (const [a, v] of [["x", b.x], ["y", b.y], ["width", b.w], ["height", b.h]]) rect.setAttribute(a, v); rect.setAttribute("class", "isel-box"); g.appendChild(rect);
+  for (const [h, x, y] of [["nw", b.x, b.y], ["ne", b.x + b.w, b.y], ["sw", b.x, b.y + b.h], ["se", b.x + b.w, b.y + b.h]]){
+    const c = document.createElementNS(NS, "circle"); c.setAttribute("cx", x); c.setAttribute("cy", y); c.setAttribute("r", 8 * k); c.setAttribute("class", "isel-h"); c.dataset.h = h; g.appendChild(c);
+  }
+  g.addEventListener("pointerdown", iselDrag); svg.appendChild(g); iselBarPos();
+}
+function iselDrag(e){
+  e.stopPropagation(); e.preventDefault();
+  const h = e.target.dataset && e.target.dataset.h, b = ISEL.box, p0 = iselPoint(e), ids = new Set(ISEL.ids), svg = iselSvg();
+  const paths = [...svg.querySelectorAll("path[data-id]")].filter(n => ids.has(n.dataset.id)), g = svg.querySelector("g.isel");
+  const ax = h ? (h.includes("w") ? b.x + b.w : b.x) : 0, ay = h ? (h.includes("n") ? b.y + b.h : b.y) : 0, cx = h ? (h.includes("w") ? b.x : b.x + b.w) : 0, cy = h ? (h.includes("n") ? b.y : b.y + b.h) : 0;
+  let m = [1, 0, 0]; iselBar.hidden = true;
+  const mv = ev => {
+    const q = iselPoint(ev);
+    if (!h) m = [1, q[0] - p0[0], q[1] - p0[1]];
+    else { const dx = cx - ax, dy = cy - ay, sc = clamp(((q[0] - ax) * dx + (q[1] - ay) * dy) / (dx * dx + dy * dy || 1), 0.1, 10); m = [sc, ax * (1 - sc), ay * (1 - sc)]; }
+    const t = `matrix(${m[0]},0,0,${m[0]},${m[1]},${m[2]})`; for (const n of paths) n.setAttribute("transform", t); if (g) g.setAttribute("transform", t);
+  };
+  const up = () => {
+    window.removeEventListener("pointermove", mv); window.removeEventListener("pointerup", up); window.removeEventListener("pointercancel", up);
+    if (m[0] === 1 && Math.abs(m[1]) + Math.abs(m[2]) < 0.5 / iselScale()){ for (const n of paths) n.removeAttribute("transform"); if (g) g.removeAttribute("transform"); iselBarPos(); return; }
+    for (const s of iselStrokes()){ s.pts = s.pts.map(q => [r2(q[0] * m[0] + m[1]), r2(q[1] * m[0] + m[2]), q[2]]); if (m[0] !== 1) s.w = r2(clamp(s.w * m[0], 0.3, 60)); }
+    if (ISEL.where === "ws"){ const bb = iselBox(iselStrokes()); growSheet(bb.x, bb.y, bb.x + bb.w, bb.y + bb.h); }
+    iselRerender(); commit();
+  };
+  window.addEventListener("pointermove", mv); window.addEventListener("pointerup", up); window.addEventListener("pointercancel", up);
+}
+function iselRerender(){ if (ISEL.where === "pdf") renderInkP(ISEL.v, ISEL.p); else { renderSheet(); renderWsInk(); } iselDraw(); drawLinks(); }
+/* the bar over the selection */
+const iselBar = document.createElement("div"); iselBar.className = "isel-bar"; iselBar.hidden = true; document.body.appendChild(iselBar);
+iselBar.addEventListener("pointerdown", e => e.stopPropagation());
+function iselBarPos(){
+  const g = document.querySelector("g.isel rect"); if (!ISEL.on || !g){ iselBar.hidden = true; return; }
+  iselBar.innerHTML = "";
+  const btn = (txt, title, fn, cls = "") => { const b = document.createElement("button"); b.className = cls; b.innerHTML = txt; b.title = title; b.setAttribute("aria-label", title); b.onclick = fn; iselBar.appendChild(b); return b; };
+  const n = (ISEL.ids || []).length;
+  const lab = document.createElement("span"); lab.className = "isel-n"; lab.textContent = n + " çizim"; iselBar.appendChild(lab);
+  btn('<i class="isel-col"></i>', "Rengini değiştir", ev => {
+    const kinds = new Set(iselStrokes().map(s => s.kind)), hl = kinds.size === 1 && kinds.has("hl"), cols = hl ? HL_COLORS : PEN_COLORS, hex = hl ? HL_HEX : PEN_HEX;
+    openPalette(ev.currentTarget, { title:"Çizimlerin rengi", named:cols.map(k => ({ k, hex:hex[k], name:CNAME[k] })), more:hl ? HL_MORE : ACCENT_MORE, current:"",
+      onPick:v => { closePop(); for (const s of iselStrokes()) s.color = isHex(v) ? v : (s.kind === "hl" ? (HL_COLORS.includes(v) ? v : "y") : (PEN_COLORS.includes(v) ? v : "k")); iselRerender(); commit(); } });
+  });
+  btn('<svg viewBox="0 0 24 24"><rect x="8" y="8" width="11" height="11" rx="2"/><path d="M5 15V6a1 1 0 0 1 1-1h9"/></svg>', "Çoğalt", () => {
+    const off = 14 / iselScale(), ids = [];
+    for (const s of iselStrokes()){ const c = { ...JSON.parse(JSON.stringify(s)), id:uid() }; delete c.rec; delete c.t; c.pts = c.pts.map(q => [r2(q[0] + off), r2(q[1] + off), q[2]]); S.proj.ink.push(c); ids.push(c.id); }
+    ISEL.ids = ids; iselRerender(); commit();
+  });
+  if (ISEL.where === "pdf" && ISEL.poly) btn('<svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="2"/><path d="m4 16 5-5 4 4 2-2 5 5"/></svg>', "Bölgeyi görsel olarak masaya ekle", () => { const { v, p, poly } = ISEL; iselClear(); lassoImage(v, p, poly); });
+  btn(ICON.del, "Sil", () => iselDelete(), "danger");
+  btn('<svg viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>', "Bitti", () => iselClear());
+  const r = g.getBoundingClientRect(); iselBar.hidden = false;
+  const bw = iselBar.offsetWidth || 260, x = clamp(r.left + r.width / 2 - bw / 2, 8, innerWidth - bw - 8), y = r.top - 52 > 8 ? r.top - 52 : Math.min(innerHeight - 52, r.bottom + 10);
+  iselBar.style.left = x + "px"; iselBar.style.top = y + "px";
+}
+document.addEventListener("scroll", () => { if (ISEL.on && ISEL.where === "pdf") requestAnimationFrame(iselBarPos); }, true);
+function iselDelete(){ const ids = new Set(ISEL.ids); S.proj.ink = S.proj.ink.filter(s => !ids.has(s.id)); S.proj.links = S.proj.links.filter(l => !(l.anchor && l.anchor.type === "ink" && ids.has(l.anchor.id))); const w = ISEL.where, v = ISEL.v, p = ISEL.p; iselClear(); if (w === "pdf") renderInkP(v, p); else renderWsInk(); drawLinks(); commit(); }
+
+/* ================= lasso -> select drawings, or copy the region as a picture ================= */
 async function finishLasso(v, p, pts){
   if (pts.length < 4) return;
+  const ss = strokesIn(pts, s => s.where === "pdf" && s.doc === v.fp && s.page === p.n);
+  if (ss.length){ iselStart({ where:"pdf", v, p, ids:ss.map(s => s.id), poly:pts }); return; }
+  return lassoImage(v, p, pts);
+}
+async function lassoImage(v, p, pts){
   const xs = pts.map(q => q[0]), ys = pts.map(q => q[1]);
   const x1 = Math.max(0, Math.min(...xs)), y1 = Math.max(0, Math.min(...ys)), x2 = Math.min(p.w, Math.max(...xs)), y2 = Math.min(p.h, Math.max(...ys)), bw = x2 - x1, bh = y2 - y1;
   if (bw < 8 || bh < 8){ toast("Bölge çok küçük. Kopyalamak istediğin alanın etrafını çiz."); return; }
@@ -840,14 +1216,14 @@ async function finishLasso(v, p, pts){
     ctx.setTransform(sc, 0, 0, sc, -x1 * sc, -y1 * sc);
     for (const st of S.proj.ink){
       if (st.where !== "pdf" || st.doc !== v.fp || st.page !== p.n) continue;
-      if (st.kind === "hl"){ ctx.save(); ctx.globalAlpha = .42; ctx.globalCompositeOperation = "multiply"; ctx.strokeStyle = HL_HEX[st.color]; ctx.lineWidth = st.w; ctx.lineCap = ctx.lineJoin = "round"; ctx.stroke(new Path2D(polyD(st.pts))); ctx.restore(); }
-      else if (!st.pr){ ctx.save(); ctx.strokeStyle = PEN_HEX[st.color]; ctx.lineWidth = st.w; ctx.lineCap = ctx.lineJoin = "round"; ctx.stroke(new Path2D(polyD(st.pts))); ctx.restore(); }
-      else { ctx.fillStyle = PEN_HEX[st.color]; ctx.fill(new Path2D(outlineD(st.pts, st.w, st.pr))); }
+      if (st.kind === "hl"){ ctx.save(); ctx.globalAlpha = .42; ctx.globalCompositeOperation = "multiply"; ctx.strokeStyle = inkHex(st); ctx.lineWidth = st.w; ctx.lineCap = ctx.lineJoin = "round"; ctx.stroke(new Path2D(inkD(st))); ctx.restore(); }
+      else if (!filled(st)){ ctx.save(); if (st.tip === "pencil") ctx.globalAlpha = .8; ctx.strokeStyle = inkHex(st); ctx.lineWidth = st.w; ctx.lineCap = ctx.lineJoin = "round"; ctx.stroke(new Path2D(inkD(st))); ctx.restore(); }
+      else { ctx.fillStyle = inkHex(st); ctx.fill(new Path2D(outlineD(st.pts, st.w, st.pr, st.tip === "callig"))); }
     }
     let src = c.toDataURL("image/webp", 0.9); if (!src.startsWith("data:image/webp")) src = c.toDataURL("image/png");
     const sp = defaultSpot();
     const it = stamp({ id:uid(), type:"image", src, doc:v.fp, page:p.n, space:S.space, rects:[{ x:r2(x1), y:r2(y1), w:r2(bw), h:r2(bh) }], color:"b", note:"", w:clamp(Math.round(bw * 1.3), 170, 380), x:sp.x, y:sp.y });
-    if (!it.font && S.lastFont) it.font = S.lastFont; if (!it.bg && S.lastBg && S.lastBg !== "white") it.bg = S.lastBg; if (!it.frame && S.lastFrame && S.lastFrame !== "thin") it.frame = S.lastFrame; if (!it.fs && S.lastFs !== 1) it.fs = S.lastFs; S.proj.items.push(it); S.sel = it.id; renderWs(); renderDocPage(v.fp, p.n); commit();
+    if (!it.font && S.lastFont) it.font = S.lastFont; if (!it.bg && S.lastBg && S.lastBg !== "white") it.bg = S.lastBg; if (!it.cc && S.lastCc) it.cc = S.lastCc; if (!it.frame && S.lastFrame && S.lastFrame !== "thin") it.frame = S.lastFrame; if (!it.fs && S.lastFs !== 1) it.fs = S.lastFs; S.proj.items.push(it); S.sel = it.id; renderWs(); renderDocPage(v.fp, p.n); commit();
     toast("Görsel masaya eklendi", isNarrow() ? { label:"Masaya git", fn:() => setTab("ws") } : null);
   } catch (err){ console.error(err); toast("Görsel kopyalanamadı. Tekrar dene."); }
 }
@@ -859,7 +1235,7 @@ function addTextBox(v, p, pt){
   const f = () => { const ta = v.root.querySelector(`.tbox[data-id="${t.id}"] textarea`); if (ta && document.activeElement !== ta) ta.focus(); }; f(); requestAnimationFrame(f);
 }
 function tboxEl(t, v, p){
-  const d = document.createElement("div"); d.className = "tbox tc-" + t.color; d.dataset.id = t.id; recAttr(d, t);
+  const d = document.createElement("div"); d.className = "tbox tc-" + (isHex(t.color) ? "x" : t.color); d.dataset.id = t.id; recAttr(d, t); if (isHex(t.color)) d.style.setProperty("--tc", t.color);
   const place = () => { d.style.left = `calc(var(--scale-factor) * ${t.x}px)`; d.style.top = `calc(var(--scale-factor) * ${t.y}px)`; d.style.width = `calc(var(--scale-factor) * ${t.w}px)`; };
   place();
   const ctl = document.createElement("div"); ctl.className = "tctl";
@@ -917,7 +1293,7 @@ $("#cmCard").onclick = () => {
   const sp = defaultSpot();
   const it = { id:uid(), type:"excerpt", text:c.quote || "", doc:c.doc, page:c.page, space:S.space, rects:c.rects, color:"o", note:c.text, w:250, x:sp.x, y:sp.y };
   if (c.rec){ it.rec = c.rec; it.t = c.t; }
-  if (!it.font && S.lastFont) it.font = S.lastFont; if (!it.bg && S.lastBg && S.lastBg !== "white") it.bg = S.lastBg; if (!it.frame && S.lastFrame && S.lastFrame !== "thin") it.frame = S.lastFrame; if (!it.fs && S.lastFs !== 1) it.fs = S.lastFs; S.proj.items.push(it); if (!c.text.trim()) c.text = " ";
+  if (!it.font && S.lastFont) it.font = S.lastFont; if (!it.bg && S.lastBg && S.lastBg !== "white") it.bg = S.lastBg; if (!it.cc && S.lastCc) it.cc = S.lastCc; if (!it.frame && S.lastFrame && S.lastFrame !== "thin") it.frame = S.lastFrame; if (!it.fs && S.lastFs !== 1) it.fs = S.lastFs; S.proj.items.push(it); if (!c.text.trim()) c.text = " ";
   closePop(); S.sel = it.id; renderWs(); renderDocPage(c.doc, c.page); commit(); toast("Yorum masaya kart olarak eklendi", isNarrow() ? { label:"Masaya git", fn:() => setTab("ws") } : null);
 };
 
@@ -1162,7 +1538,7 @@ function addExcerpt(info, pt){
   const cw = Math.round(Math.min(900, 250 * (S.lastFs || 1)));
   const it = stamp({ id:uid(), type:"excerpt", text:info.text, doc:v.fp, page:info.page, space:S.space, rects:info.rects, color:S.lastColor, note:"", w:cw, x:0, y:0 });
   if (pt){ ({ x:it.x, y:it.y } = clampBox(pt.x - cw / 2, pt.y - 24, cw, 120)); } else { const p = defaultSpot(); it.x = p.x; it.y = p.y; }
-  if (!it.font && S.lastFont) it.font = S.lastFont; if (!it.bg && S.lastBg && S.lastBg !== "white") it.bg = S.lastBg; if (!it.frame && S.lastFrame && S.lastFrame !== "thin") it.frame = S.lastFrame; if (!it.fs && S.lastFs !== 1) it.fs = S.lastFs; S.proj.items.push(it); S.sel = it.id; S.selLink = null;
+  if (!it.font && S.lastFont) it.font = S.lastFont; if (!it.bg && S.lastBg && S.lastBg !== "white") it.bg = S.lastBg; if (!it.cc && S.lastCc) it.cc = S.lastCc; if (!it.frame && S.lastFrame && S.lastFrame !== "thin") it.frame = S.lastFrame; if (!it.fs && S.lastFs !== 1) it.fs = S.lastFs; S.proj.items.push(it); S.sel = it.id; S.selLink = null;
   renderWs(); renderDocPage(v.fp, info.page); commit(); if (!pt) showCardIfHidden(it.id);
   toast("Alıntı masaya eklendi", isNarrow() ? { label:"Masaya git", fn:() => setTab("ws") } : null);
 }
@@ -1229,17 +1605,30 @@ function fillSheetPop(rebuild){
     $("#shNote").textContent = "";
   }
   row.querySelectorAll(".pat").forEach(b => b.setAttribute("aria-checked", String(b.dataset.p === sp.pattern)));
+  const dr = $("#deskRow");
+  if (rebuild){ dr.innerHTML = ""; for (const [k, d] of Object.entries(DESKS)){ const b = document.createElement("button"); b.className = "desk-sw"; b.dataset.k = k; b.title = d.name; b.setAttribute("aria-label", d.name); if (d.bg) b.style.backgroundImage = d.bg;
+    const t = document.createElement("span"); t.textContent = d.name; const w = document.createElement("span"); w.className = "desk-w"; w.append(b, t); b.onclick = () => { if (k === "plain") delete curSpace().desk; else curSpace().desk = k; renderSheet(); save(); fillSheetPop(false); }; dr.appendChild(w); } }
+  dr.querySelectorAll(".desk-sw").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.k === (sp.desk || "plain"))));
+  $("#grainChk").checked = !!sp.grain;
   const pr = $("#paperRow");
   if (rebuild){ pr.innerHTML = ""; for (const [k, p] of Object.entries(PAPER_COLORS)){ const b = document.createElement("button"); b.className = "paper-sw"; b.dataset.k = k; b.style.setProperty("--pl", p.l); b.style.setProperty("--pd", p.d); b.title = p.name; b.setAttribute("aria-label", p.name);
-    b.onclick = () => { if (k === "white") delete curSpace().paper; else curSpace().paper = k; renderSheet(); save(); fillSheetPop(false); }; pr.appendChild(b); } }
+    b.onclick = () => { if (k === "white") delete curSpace().paper; else curSpace().paper = k; renderSheet(); save(); fillSheetPop(false); }; pr.appendChild(b); }
+    /* any other colour */
+    const more = document.createElement("button"); more.className = "paper-sw paper-more"; more.title = "Başka renk"; more.setAttribute("aria-label", "Başka renk"); more.textContent = "+";
+    more.onclick = () => { openPalette(more, { title:"Masa kağıdı", named:PAPER_NAMED(), more:PAPER_MORE, current:curSpace().paper || "white",
+      back:() => sheetAnchor ? openSheetPop(sheetAnchor) : closePop(),
+      onPick:v => { if (v === "white") delete curSpace().paper; else curSpace().paper = v; renderSheet(); save(); if (sheetAnchor && document.contains(sheetAnchor)) openSheetPop(sheetAnchor); else closePop(); } }); };
+    pr.appendChild(more); }
   pr.querySelectorAll(".paper-sw").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.k === (sp.paper || "white"))));
+  const pm = pr.querySelector(".paper-more"); if (pm){ const custom = isHex(sp.paper); pm.setAttribute("aria-pressed", String(custom)); if (custom){ pm.style.setProperty("--pl", sp.paper); pm.style.setProperty("--pd", paperOf(sp.paper).d); } else { pm.style.removeProperty("--pl"); pm.style.removeProperty("--pd"); } }
   const land = sh.w >= sh.h, wmm = Math.round(sh.w / MM), hmm = Math.round(sh.h / MM);
   const hit = Object.entries(PAPER).find(([, [a, b]]) => Math.abs(Math.min(wmm, hmm) - a) <= 2 && Math.abs(Math.max(wmm, hmm) - b) <= 2);
   $("#shPreset").value = hit ? hit[0] : "custom";
   $("#shOrient").querySelectorAll("button").forEach(b => b.setAttribute("aria-checked", String((b.dataset.o === "land") === land)));
   $("#shW").value = toCm(sh.w); $("#shH").value = toCm(sh.h);
 }
-function openSheetPop(anchor){ closePop(); fillSheetPop(true); openPop($("#sheetPop"), anchor); }
+let sheetAnchor = null;
+function openSheetPop(anchor){ sheetAnchor = anchor; closePop(); fillSheetPop(true); openPop($("#sheetPop"), anchor); }
 $("#spSheet").onclick = () => { const a = el.spaces.querySelector(".sp-more") || el.spaces; openSheetPop(a); };
 $("#shPreset").onchange = e => {
   const k = e.target.value, sh = sheet(), land = sh.w >= sh.h;
@@ -1261,11 +1650,31 @@ $("#spDelete").onclick = () => {
 
 /* ================= workspace render ================= */
 const itemById = id => S.proj.items.find(i => i.id === id);
+/* ---- desk surfaces (the area around the sheet) and paper grain, drawn from noise so no image files are needed (v6.9.6) ---- */
+const svgTex = (w, h, body) => `url("data:image/svg+xml,${encodeURIComponent(`<svg xmlns='http://www.w3.org/2000/svg' width='${w}' height='${h}'>${body}</svg>`)}")`;
+const noiseTex = (w, h, freq, oct, seed, m, extra = "") => svgTex(w, h, `<filter id='f' x='0' y='0' width='100%' height='100%' color-interpolation-filters='sRGB'><feTurbulence type='fractalNoise' baseFrequency='${freq}' numOctaves='${oct}' seed='${seed}' stitchTiles='stitch'/><feColorMatrix type='matrix' values='${m}'/>${extra}</filter><rect width='100%' height='100%' filter='url(#f)'/>`);
+const DESKS = {
+  plain:{ name:"Düz" },
+  wood:{ name:"Ahşap", bg:noiseTex(640, 320, "0.0035 0.11", 4, 7, "0.30 0 0 0 0.47  0.22 0 0 0 0.31  0.14 0 0 0 0.17  0 0 0 0 1") },
+  cork:{ name:"Mantar pano", bg:noiseTex(300, 300, "0.75", 3, 4, "0.55 0 0 0 0.42  0.45 0 0 0 0.28  0.32 0 0 0 0.13  0 0 0 0 1") },
+  slate:{ name:"Karatahta", bg:noiseTex(500, 500, "0.012", 5, 9, "0.10 0 0 0 0.14  0.11 0 0 0 0.18  0.10 0 0 0 0.16  0 0 0 0 1") },
+  linen:{ name:"Keten", bg:svgTex(240, 240, "<filter id='f' x='0' y='0' width='100%' height='100%' color-interpolation-filters='sRGB'><feTurbulence type='fractalNoise' baseFrequency='0.9 0.025' numOctaves='2' seed='2' stitchTiles='stitch' result='a'/><feTurbulence type='fractalNoise' baseFrequency='0.025 0.9' numOctaves='2' seed='5' stitchTiles='stitch' result='b'/><feBlend in='a' in2='b' mode='multiply'/><feColorMatrix type='matrix' values='0.22 0 0 0 0.74  0.22 0 0 0 0.71  0.22 0 0 0 0.65  0 0 0 0 1'/></filter><rect width='100%' height='100%' filter='url(#f)'/>") },
+  felt:{ name:"Keçe", bg:noiseTex(260, 260, "0.9", 2, 3, "0.16 0 0 0 0.22  0.16 0 0 0 0.23  0.16 0 0 0 0.26  0 0 0 0 1") }
+};
+const GRAIN = noiseTex(360, 360, "0.85 0.6", 4, 11, "0 0 0 0 0.35  0 0 0 0 0.3  0 0 0 0 0.22  0 0 0 -0.7 0.42");
+document.documentElement.style.setProperty("--grain", GRAIN);
+function renderDesk(){
+  const sp = curSpace(), d = DESKS[sp.desk] && sp.desk !== "plain" ? DESKS[sp.desk] : null;
+  if (d){ el.ws.style.setProperty("--desk", d.bg); el.ws.dataset.desk = sp.desk; } else { el.ws.style.removeProperty("--desk"); delete el.ws.dataset.desk; }
+  sheetEl.classList.toggle("grain", !!sp.grain); deskPos();
+}
+/* the desk moves with the sheet when the view is panned */
+function deskPos(){ if (!el.ws.dataset.desk) return; const v = view(); el.ws.style.backgroundPosition = `${Math.round(v.tx)}px ${Math.round(v.ty)}px`; }
 const sheetEl = document.createElement("div"); sheetEl.id = "sheet"; el.plane.insertBefore(sheetEl, el.plane.firstChild);
 const sheet = () => curSpace().sheet;
 function renderSheet(){
-  const sp = curSpace(), sh = sp.sheet; Object.assign(sheetEl.style, { left:sh.x + "px", top:sh.y + "px", width:sh.w + "px", height:sh.h + "px" }); sheetEl.dataset.pat = sp.pattern;
-  const pc = PAPER_COLORS[sp.paper]; if (pc && sp.paper !== "white"){ sheetEl.style.setProperty("--pl", pc.l); sheetEl.style.setProperty("--pd", pc.d); sheetEl.classList.add("tinted"); } else { sheetEl.style.removeProperty("--pl"); sheetEl.style.removeProperty("--pd"); sheetEl.classList.remove("tinted"); }
+  const sp = curSpace(), sh = sp.sheet; Object.assign(sheetEl.style, { left:sh.x + "px", top:sh.y + "px", width:sh.w + "px", height:sh.h + "px" }); sheetEl.dataset.pat = sp.pattern; renderDesk();
+  const pc = paperOf(sp.paper); if (pc && sp.paper !== "white"){ sheetEl.style.setProperty("--pl", pc.l); sheetEl.style.setProperty("--pd", pc.d); sheetEl.classList.add("tinted"); } else { sheetEl.style.removeProperty("--pl"); sheetEl.style.removeProperty("--pd"); sheetEl.classList.remove("tinted"); }
 }
 /* keep at least a strip of the sheet on screen, so it can never be scrolled away and lost */
 function clampView(){
@@ -1303,9 +1712,9 @@ function applyView(){
   if (!S.proj) return;
   clampView();
   const v = view();
-  el.plane.style.transform = `translate(${v.tx}px,${v.ty}px) scale(${v.s})`;
+  el.plane.style.transform = `translate(${v.tx}px,${v.ty}px) scale(${v.s})`; deskPos(); if (S.selStk) stkBarPos(); if (ISEL.on && ISEL.where === "ws") iselDraw();
   el.ws.dataset.zoom = v.s < 0.45 ? "far" : v.s < 0.9 ? "mid" : "near";
-  el.zl.textContent = Math.round(v.s * 100) + "%"; scheduleX();
+  el.zl.textContent = Math.round(v.s * 100) + "%"; scheduleX(); if (MINI.on) renderMini();
 }
 function renderWs(){
   el.plane.querySelectorAll(".card,.group").forEach(n => n.remove()); cardEls.clear();
@@ -1318,11 +1727,105 @@ function renderWs(){
   el.plane.querySelectorAll("textarea.note").forEach(autosize);
   el.wsEmpty.hidden = items.length > 0 || S.proj.ink.some(s => s.where === "ws" && s.space === S.space);
   el.tabCount.textContent = items.length;
-  renderSheet(); renderWsInk(); if (growToContent()) save(); applyView(); drawLinks(); refreshReveal(); applyWsFilter();
+  renderSheet(); renderWsInk(); if (growToContent()) save(); applyView(); renderStickers(); drawLinks(); refreshReveal(); applyWsFilter();
+}
+/* ================= stickers on the workspace and on cards (v6.9.6) =================
+   S.proj.stickers: { id, e:"emoji" | img:dataURL, s:size, r:degrees, and either space + x, y (centre on the workspace)
+   or card + fx (share of the card's width) + y (from the card's top) } */
+const stkList = () => S.proj.stickers || (S.proj.stickers = []);
+function stkNode(k){
+  const n = document.createElement("div"); n.className = "stk" + (S.selStk === k.id ? " sel" : ""); n.dataset.sid = k.id;
+  n.style.width = n.style.height = k.s + "px"; n.style.setProperty("--r", (k.r || 0) + "deg");
+  if (k.img){ const im = document.createElement("img"); im.src = k.img; im.alt = ""; im.draggable = false; n.appendChild(im); }
+  else { const e = document.createElement("span"); e.textContent = k.e; e.style.fontSize = Math.round(k.s * 0.8) + "px"; n.appendChild(e); }
+  n.addEventListener("pointerdown", e => stkDrag(e, k, n));
+  return n;
+}
+function renderStickers(){
+  el.plane.querySelectorAll(".stk").forEach(n => n.remove());
+  for (const k of stkList()){
+    if (k.card){
+      const c = cardEls.get(k.card); if (!c) continue; const it = itemById(k.card); if (!it || it.space !== S.space) continue;
+      const n = stkNode(k); n.style.left = (k.fx * 100) + "%"; n.style.top = k.y + "px"; n.classList.add("on-card"); c.appendChild(n);
+    } else if (k.space === S.space){ const n = stkNode(k); n.style.left = k.x + "px"; n.style.top = k.y + "px"; el.plane.appendChild(n); }
+  }
+  stkBarPos();
+}
+function stkSelect(id){ S.selStk = id; el.plane.querySelectorAll(".stk").forEach(n => n.classList.toggle("sel", n.dataset.sid === id)); stkBarPos(); }
+/* drag: on the workspace or onto a card (it then sticks to that card); off a card it goes back to the workspace */
+function stkDrag(e, k, n){
+  if (S.tool !== "select" || e.button > 0) return;
+  e.stopPropagation(); e.preventDefault(); stkSelect(k.id);
+  const s = view().s, st = { x:e.clientX, y:e.clientY }; let moved = false;
+  const mv = ev => {
+    const dx = (ev.clientX - st.x), dy = (ev.clientY - st.y); if (!moved && Math.hypot(dx, dy) < 4) return; moved = true;
+    n.style.transform = `translate(-50%,-50%) translate(${dx / s}px, ${dy / s}px) rotate(var(--r))`;
+    stkBar.hidden = true;
+  };
+  const up = ev => {
+    window.removeEventListener("pointermove", mv); window.removeEventListener("pointerup", up); window.removeEventListener("pointercancel", up);
+    if (!moved){ stkBarPos(); return; }
+    n.style.visibility = "hidden"; const under = document.elementFromPoint(ev.clientX, ev.clientY); n.style.visibility = "";
+    const card = under && under.closest && under.closest("#plane .card"), p = screenToPlane(ev.clientX, ev.clientY);
+    if (card && cardEls.get(card.dataset.id) === card){
+      const r = card.getBoundingClientRect(), it = itemById(card.dataset.id);
+      k.card = it.id; k.fx = r2(clamp((ev.clientX - r.left) / r.width, -0.1, 1.1)); k.y = r2((ev.clientY - r.top) / s); delete k.space; delete k.x;
+    } else { delete k.card; delete k.fx; k.space = S.space; k.x = p.x; k.y = p.y; growSheet(p.x - k.s, p.y - k.s, p.x + k.s, p.y + k.s); }
+    renderStickers(); commit();
+  };
+  window.addEventListener("pointermove", mv); window.addEventListener("pointerup", up); window.addEventListener("pointercancel", up);
+}
+/* small bar over the selected sticker: size, turn, delete */
+const stkBar = document.createElement("div"); stkBar.className = "stk-bar"; stkBar.hidden = true;
+stkBar.innerHTML = '<button data-a="-" title="Küçült" aria-label="Küçült">−</button><button data-a="+" title="Büyüt" aria-label="Büyüt">+</button><button data-a="r" title="Döndür" aria-label="Döndür">↻</button><button data-a="x" title="Sil" aria-label="Çıkartmayı sil">' + ICON.del + '</button>';
+el.ws.appendChild(stkBar);
+stkBar.addEventListener("pointerdown", e => e.stopPropagation());
+stkBar.addEventListener("click", e => {
+  const b = e.target.closest("button"); if (!b) return; const k = stkList().find(x => x.id === S.selStk); if (!k) return;
+  const a = b.dataset.a;
+  if (a === "+") k.s = Math.min(320, Math.round(k.s * 1.2)); else if (a === "-") k.s = Math.max(24, Math.round(k.s / 1.2));
+  else if (a === "r") k.r = ((k.r || 0) + 15 + 180) % 360 - 180;
+  else if (a === "x"){ S.proj.stickers = stkList().filter(x => x !== k); S.selStk = null; }
+  renderStickers(); commit();
+});
+function stkBarPos(){
+  const n = S.selStk && el.plane.querySelector(`.stk[data-sid="${S.selStk}"]`);
+  if (!n || S.tool !== "select"){ stkBar.hidden = true; return; }
+  const r = n.getBoundingClientRect(), w = el.ws.getBoundingClientRect();
+  stkBar.hidden = false; stkBar.style.left = (r.left + r.width / 2 - w.left) + "px"; stkBar.style.top = Math.max(4, r.top - w.top - 44) + "px";
+}
+/* picker: the same sticker set as the folders, an own emoji or an own picture */
+const stkPop = document.createElement("div"); stkPop.className = "pop look-pop stk-pop"; stkPop.hidden = true; stkPop.setAttribute("role", "dialog"); stkPop.setAttribute("aria-label", "Çıkartma"); document.body.appendChild(stkPop);
+function openStickerPick(anchor, onPick, tab = 0){
+  stkPop.innerHTML = "";
+  const h = document.createElement("div"); h.className = "sh-h"; h.textContent = "Çıkartma"; stkPop.appendChild(h);
+  const tabs = document.createElement("div"); tabs.className = "look-tabs"; const grid = document.createElement("div"); grid.className = "look-emo";
+  const fill = i => { tabs.querySelectorAll("button").forEach((b, j) => b.setAttribute("aria-pressed", String(i === j))); grid.innerHTML = "";
+    for (const e of STICKERS[i][1].split(" ")){ const b = document.createElement("button"); b.textContent = e; b.setAttribute("aria-label", e); b.onclick = () => { closePop(); onPick({ e }); }; grid.appendChild(b); } };
+  STICKERS.forEach(([name], i) => { const b = document.createElement("button"); b.textContent = name; b.onclick = () => fill(i); tabs.appendChild(b); });
+  stkPop.append(tabs, grid); fill(tab);
+  const own = document.createElement("div"); own.className = "look-own";
+  const inp = document.createElement("input"); inp.type = "text"; inp.placeholder = "Kendi emojin"; inp.maxLength = 8;
+  const go = () => { const v = [...inp.value.trim()].slice(0, 3).join(""); if (v){ closePop(); onPick({ e:v }); } };
+  inp.onkeydown = e => { if (e.key === "Enter") go(); };
+  const ok = document.createElement("button"); ok.className = "btn sm"; ok.textContent = "Ekle"; ok.onclick = go;
+  const up = document.createElement("button"); up.className = "btn sm"; up.textContent = "Görsel yükle";
+  up.onclick = async () => { const f = await pickImageFile(); if (!f) return; try { const img = await shrinkImage(f, 360, true); closePop(); onPick({ img }); } catch { toast("Bu görsel açılamadı."); } };
+  own.append(inp, ok, up); stkPop.appendChild(own);
+  openPop(stkPop, anchor);
+}
+function addSticker(val, where){
+  const k = { id:"k" + uid(), s:val.img ? 96 : 64, r:val.img ? 0 : -6, ...(val.img ? { img:val.img } : { e:val.e }) };
+  if (where && where.card){ k.card = where.card; k.fx = 0.94; k.y = -6; k.s = val.img ? 72 : 46; k.r = 10; }
+  else { const r = el.ws.getBoundingClientRect(), p = screenToPlane(r.left + r.width / 2, r.top + r.height / 2); k.space = S.space; k.x = p.x; k.y = p.y; growSheet(p.x - 80, p.y - 80, p.x + 80, p.y + 80); }
+  stkList().push(k); S.selStk = k.id; renderStickers(); commit();
 }
 function autosize(t){ t.style.height = "auto"; t.style.height = t.scrollHeight + "px"; }
 function groupEl(g, mem){
   const ge = document.createElement("div"); ge.className = "group" + (g.collapsed ? " collapsed" : ""); ge.dataset.gid = g.id;
+  /* v6.9.6: group colour and paper */
+  if (isHex(g.c)){ ge.style.setProperty("--gc", g.c); ge.classList.add("g-col"); }
+  const gp = g.bg && paperOf(g.bg); if (gp){ ge.style.setProperty("--gbg-l", gp.l); ge.style.setProperty("--gbg-d", gp.d); ge.classList.add("g-paper"); }
   ge.style.left = g.x + "px"; ge.style.top = g.y + "px"; ge.style.width = g.w + "px";
   const head = document.createElement("div"); head.className = "g-head";
   const title = document.createElement("input"); title.className = "g-title"; title.value = g.title || ""; title.placeholder = "Grup başlığı"; title.setAttribute("aria-label", "Grup başlığı");
@@ -1331,7 +1834,8 @@ function groupEl(g, mem){
   const col = document.createElement("button"); col.className = "mini"; col.style.opacity = 1; col.innerHTML = ICON.chevron; col.title = g.collapsed ? "Grubu aç" : "Yığına dönüştür"; col.setAttribute("aria-label", col.title);
   col.style.transform = g.collapsed ? "rotate(-90deg)" : ""; col.onclick = () => { g.collapsed = !g.collapsed; renderWs(); commit(); };
   const ug = document.createElement("button"); ug.className = "mini"; ug.style.opacity = 1; ug.innerHTML = ICON.ungroup; ug.title = "Grubu dağıt"; ug.setAttribute("aria-label", ug.title); ug.onclick = () => ungroup(g.id);
-  head.append(title, cnt, col, ug); ge.appendChild(head);
+  const gs = document.createElement("button"); gs.className = "mini"; gs.style.opacity = 1; gs.innerHTML = ICON.palette; gs.title = "Grubun rengi ve kağıdı"; gs.setAttribute("aria-label", gs.title); gs.onclick = () => openGroupStyle(g.id, gs);
+  head.append(title, cnt, gs, col, ug); ge.appendChild(head);
   for (const it of mem) ge.appendChild(cardEl(it, true));
   const rz = document.createElement("div"); rz.className = "g-rz"; ge.appendChild(rz);
   head.addEventListener("pointerdown", e => {
@@ -1348,6 +1852,21 @@ function groupEl(g, mem){
     window.addEventListener("pointermove", mv); window.addEventListener("pointerup", up);
   });
   return ge;
+}
+function openGroupStyle(gid, anchor){
+  const g = S.proj.groups.find(x => x.id === gid); if (!g) return;
+  const again = () => { const a = el.plane.querySelector(`.group[data-gid="${gid}"] .g-head .mini`); openGroupStyle(gid, a || anchor); };
+  const done = () => { renderWs(); commit(); again(); };
+  stylePop.innerHTML = "";
+  const h = document.createElement("div"); h.className = "sh-h"; h.textContent = "Grup kutusu"; stylePop.appendChild(h);
+  const sec = t => { const l = document.createElement("div"); l.className = "sh-l"; l.textContent = t; stylePop.appendChild(l); const r = document.createElement("div"); r.className = "st-row"; stylePop.appendChild(r); return r; };
+  const btn = (row, hex, name, fn) => { const b = document.createElement("button"); b.className = "col-pick"; const d = document.createElement("i"); d.style.background = hex; const t = document.createElement("span"); t.textContent = name; b.append(d, t); const c = document.createElement("span"); c.className = "chev"; c.innerHTML = ICON.chevron; b.appendChild(c); b.onclick = () => fn(b); row.appendChild(b); };
+  btn(sec("Renk (çerçeve ve başlık)"), isHex(g.c) ? g.c : "transparent", isHex(g.c) ? g.c.toUpperCase() : "Yok", b => openPalette(b, { title:"Grup rengi", named:[{ k:"none", hex:"#ffffff", name:"Renk yok" }, ...ACCENT_NAMED()], more:ACCENT_MORE, current:g.c || "none", back:again,
+    onPick:v => { const hex = isHex(v) ? v : HL_HEX[v]; if (hex) g.c = hex; else delete g.c; done(); } }));
+  const gp = paperOf(g.bg || "white") || PAPER_COLORS.white;
+  btn(sec("Kağıt"), g.bg ? gp.l : "transparent", g.bg ? gp.name : "Şeffaf", b => openPalette(b, { title:"Grup kağıdı", named:[{ k:"none", hex:"#ffffff", name:"Şeffaf" }, ...PAPER_NAMED().filter(n => n.k !== "white"), { k:"white", hex:"#ffffff", name:"Beyaz" }], more:PAPER_MORE, current:g.bg || "none", back:again,
+    onPick:v => { if (v === "none") delete g.bg; else g.bg = v; done(); } }));
+  openPop(stylePop, anchor);
 }
 function ungroup(gid){
   const g = S.proj.groups.find(x => x.id === gid); if (!g) return;
@@ -1371,11 +1890,231 @@ function anchorLabel(a){
   const o = anchorObj(a); if (!o || !o.doc) return null;
   return (S.proj.docs.length > 1 ? docName(o.doc).slice(0, 14) + " · " : "") + "s. " + o.page;
 }
+/* ================= rich text in card notes (v6.9.4) =================
+   it.note stays the plain text: search, exam mode, Markdown, older versions all keep using it.
+   it.rich (optional) holds the same text as runs: [{ s, b, i, u, c:"#rrggbb", f:fontId }]. Their texts joined must equal it.note;
+   if an older version edits the note, they no longer match and the plain text wins (nothing is lost but the styling). */
+const RT_KEYS = ["b", "i", "u", "c", "f"];
+const rtStyle = r => { const o = {}; if (r && r.b) o.b = true; if (r && r.i) o.i = true; if (r && r.u) o.u = true; if (r && isHex(r.c)) o.c = r.c.toLowerCase(); if (r && FONT_IDS.has(r.f)) o.f = r.f; return o; };
+const rtSame = (a, b) => RT_KEYS.every(k => ((a && a[k]) || "") === ((b && b[k]) || ""));
+const rtHas = r => RT_KEYS.some(k => r[k]);
+function rtNorm(runs){
+  const out = [];
+  for (const r of runs){ const s = String(r.s || ""); if (!s) continue; const st = rtStyle(r); const l = out[out.length - 1]; if (l && rtSame(l, st)) l.s += s; else out.push({ s, ...st }); }
+  return out;
+}
+const rtValid = it => Array.isArray(it.rich) && it.rich.map(r => String(r.s || "")).join("") === (it.note || "");
+const rtRuns = it => rtValid(it) ? rtNorm(it.rich) : [{ s:it.note || "" }];
+const richOf = it => rtValid(it) && it.rich.some(rtHas) ? rtNorm(it.rich) : null;
+/* Markdown for a note: bold **, italic *, underline <u> (colours and fonts have no Markdown form) */
+function mdNote(it){
+  const runs = richOf(it); if (!runs) return it.note || "";
+  return runs.map(r => r.s.split("\n").map(line => { if (!line.trim()) return line; const m = /^(\s*)(.*?)(\s*)$/.exec(line); let t = m[2]; if (r.u) t = `<u>${t}</u>`; if (r.i) t = `*${t}*`; if (r.b) t = `**${t}**`; return m[1] + t + m[3]; }).join("\n")).join("");
+}
+function rtSet(it, runs){ runs = rtNorm(runs); it.note = runs.map(r => r.s).join(""); if (runs.some(rtHas)) it.rich = runs; else delete it.rich; }
+function cleanRich(i){
+  if (!Array.isArray(i.rich)) return {};
+  const runs = rtNorm(i.rich.filter(r => r && typeof r.s === "string"));
+  return runs.map(r => r.s).join("") === String(i.note || "") && runs.some(rtHas) ? { rich:runs } : {};
+}
+/* style at a position of the plain text */
+function rtStyleAt(runs){
+  const ends = []; let n = 0; for (const r of runs){ n += r.s.length; ends.push(n); }
+  return pos => { for (let k = 0; k < runs.length; k++) if (pos < ends[k]) return runs[k]; return runs[runs.length - 1] || {}; };
+}
+/* change the style of the characters a..b */
+function rtMap(runs, a, b, fn){
+  const out = []; let p = 0;
+  for (const r of runs){
+    const e = p + r.s.length, st = rtStyle(r);
+    if (e <= a || p >= b) out.push({ s:r.s, ...st });
+    else {
+      const x = Math.max(a, p) - p, y = Math.min(b, e) - p;
+      if (x > 0) out.push({ s:r.s.slice(0, x), ...st });
+      out.push({ s:r.s.slice(x, y), ...rtStyle(fn(st)) });
+      if (y < r.s.length) out.push({ s:r.s.slice(y), ...st });
+    }
+    p = e;
+  }
+  return rtNorm(out);
+}
+/* put text in at a..b with a style */
+function rtInsert(runs, a, b, text, st){
+  const before = [], after = []; let p = 0;
+  for (const r of runs){ const e = p + r.s.length, s0 = rtStyle(r);
+    if (e <= a) before.push(r); else if (p >= b) after.push(r);
+    else { if (a > p) before.push({ s:r.s.slice(0, a - p), ...s0 }); if (b < e) after.push({ s:r.s.slice(b - p), ...s0 }); }
+    p = e; }
+  return rtNorm([...before, { s:text, ...rtStyle(st) }, ...after]);
+}
+function rtCss(st){ const c = []; if (st.b) c.push("font-weight:700"); if (st.i) c.push("font-style:italic"); if (st.u) c.push("text-decoration:underline"); if (st.c) c.push("color:" + st.c); if (st.f) c.push("font-family:" + fontCss(st.f)); return c.join(";"); }
+function rtNode(text, st){
+  if (!st || !rtHas(st)) return document.createTextNode(text);
+  const sp = document.createElement("span"); sp.dataset.rt = "1"; sp.style.cssText = rtCss(st); sp.textContent = text; return sp;
+}
+function rtRender(box, runs){
+  box.textContent = "";
+  for (const r of runs) box.appendChild(rtNode(r.s, r));
+  if (runs.length && runs[runs.length - 1].s.endsWith("\n")){ const br = document.createElement("br"); br.dataset.s = "1"; box.appendChild(br); } /* lets the caret sit on the empty last line */
+}
+/* read the editor back into runs, whatever markup the browser put there */
+const rgbHex = v => { const m = /rgba?\((\d+),\s*(\d+),\s*(\d+)/.exec(v || ""); return m ? "#" + [m[1], m[2], m[3]].map(x => (+x).toString(16).padStart(2, "0")).join("") : ""; };
+function rtRead(box){
+  const base = getComputedStyle(box), baseC = rgbHex(base.color), baseF = base.fontFamily, runs = [];
+  const styleOf = node => {
+    const elx = node.parentElement, cs = getComputedStyle(elx), st = {};
+    if (+cs.fontWeight >= 600 && !(+base.fontWeight >= 600)) st.b = true;
+    if (cs.fontStyle === "italic" && base.fontStyle !== "italic") st.i = true;
+    for (let e = elx; e && e !== box; e = e.parentElement){ if ((getComputedStyle(e).textDecorationLine || "").includes("underline")){ st.u = true; break; } }
+    const c = rgbHex(cs.color); if (c && c !== baseC) st.c = c;
+    if (cs.fontFamily !== baseF){ const m = /edf-([a-z0-9-]+)/.exec(cs.fontFamily); if (m && FONT_IDS.has(m[1])) st.f = m[1]; }
+    return st;
+  };
+  const walk = (n, first) => {
+    for (const ch of n.childNodes){
+      if (ch.nodeType === 3){ if (ch.data) runs.push({ s:ch.data.replace(/ /g, " "), ...styleOf(ch) }); continue; }
+      if (ch.nodeType !== 1) continue;
+      if (ch.tagName === "BR"){ if (!ch.dataset.s) runs.push({ s:"\n" }); continue; }
+      const block = /^(DIV|P|LI)$/.test(ch.tagName);
+      if (block && runs.length && !runs[runs.length - 1].s.endsWith("\n")) runs.push({ s:"\n" });
+      walk(ch);
+    }
+  };
+  walk(box);
+  return rtNorm(runs);
+}
+/* caret / selection as character positions */
+function rtSel(box){
+  const sel = getSelection(); if (!sel.rangeCount) return null;
+  const r = sel.getRangeAt(0); if (!box.contains(r.startContainer) || !box.contains(r.endContainer)) return null;
+  const pos = (node, off) => { const q = document.createRange(); q.selectNodeContents(box); q.setEnd(node, off); return q.toString().length; };
+  const a = pos(r.startContainer, r.startOffset), b = pos(r.endContainer, r.endOffset); return [Math.min(a, b), Math.max(a, b)];
+}
+function rtSetSel(box, a, b = a){
+  const find = want => { const w = document.createTreeWalker(box, NodeFilter.SHOW_TEXT); let n, p = 0, last = null;
+    while ((n = w.nextNode())){ if (want <= p + n.data.length) return [n, want - p]; p += n.data.length; last = n; }
+    return last ? [last, last.data.length] : [box, 0]; };
+  const [sn, so] = find(a), [en, eo] = find(b), r = document.createRange(); r.setStart(sn, so); r.setEnd(en, eo);
+  const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r);
+}
+
+/* ---- the editor inside a card ---- */
+const RT = { id:null, box:null, last:null, pending:null };
+function noteEditor(it, onBlur){
+  const ed = document.createElement("div"); ed.className = "note note-ed"; ed.contentEditable = "true"; ed.dataset.note = it.id; ed.spellcheck = true;
+  ed.setAttribute("role", "textbox"); ed.setAttribute("aria-multiline", "true"); ed.setAttribute("aria-label", "Kart notu");
+  ed.dataset.ph = it.type === "note" ? "Düşünceni yaz… (formül için $E = mc^2$)" : "Not ekle…";
+  rtRender(ed, rtRuns(it));
+  const sync = () => { const runs = rtRead(ed); rtSet(it, runs); ed.classList.toggle("empty", !it.note); drawLinks(); save(); };
+  ed.classList.toggle("empty", !it.note);
+  const insert = (text, style) => {
+    const sel = rtSel(ed) || [it.note.length, it.note.length], runs = rtRead(ed);
+    const st = style || (RT.pending && RT.pending.id === it.id && RT.pending.at === sel[0] ? RT.pending.st : rtStyleAt(runs)(Math.max(0, sel[0] - 1)));
+    const next = rtInsert(runs, sel[0], sel[1], text, st); rtSet(it, next); rtRender(ed, rtRuns(it)); rtSetSel(ed, sel[0] + text.length);
+    /* after a line break the browser puts the caret outside the styled text: keep the style for what is typed next */
+    RT.pending = text.endsWith("\n") && rtHas(rtStyle(st)) ? { id:it.id, at:sel[0] + text.length, st:rtStyle(st) } : null; ed.classList.toggle("empty", !it.note); drawLinks(); save(); fmtUpdate();
+  };
+  ed.addEventListener("beforeinput", e => {
+    const t = e.inputType;
+    if (t === "insertParagraph" || t === "insertLineBreak"){ e.preventDefault(); insert("\n"); return; }
+    if (t === "formatBold" || t === "formatItalic" || t === "formatUnderline"){ e.preventDefault(); rtToggle({ formatBold:"b", formatItalic:"i", formatUnderline:"u" }[t]); return; }
+    if (t && t.startsWith("format")){ e.preventDefault(); return; }
+    if (t === "insertText" && RT.pending && RT.pending.id === it.id && e.data){ const s0 = rtSel(ed); if (s0 && s0[0] === RT.pending.at){ e.preventDefault(); insert(e.data, RT.pending.st); } }
+  });
+  ed.addEventListener("input", sync);
+  ed.addEventListener("paste", e => { e.preventDefault(); const t = (e.clipboardData && e.clipboardData.getData("text/plain")) || ""; if (t) insert(t.replace(/\r\n?/g, "\n")); });
+  ed.addEventListener("drop", e => { e.preventDefault(); const t = e.dataTransfer && e.dataTransfer.getData("text/plain"); if (t){ ed.focus(); insert(t.replace(/\r\n?/g, "\n")); } });
+  ed.addEventListener("keydown", e => {
+    if ((e.ctrlKey || e.metaKey) && !e.altKey && ["b", "i", "u"].includes(e.key.toLowerCase())){ e.preventDefault(); e.stopPropagation(); rtToggle(e.key.toLowerCase()); }
+  });
+  ed.addEventListener("focus", () => { RT.id = it.id; RT.box = ed; select(it.id); fmtShow(true); fmtUpdate(); });
+  ed.addEventListener("blur", () => {
+    RT.last = { id:it.id, sel:RT.lastSel && RT.lastSel.id === it.id ? RT.lastSel.sel : [it.note.length, it.note.length] };
+    setTimeout(() => { if (document.activeElement !== ed && !fmtBar.contains(document.activeElement)){ if (RT.box === ed){ RT.box = null; RT.id = null; } fmtShow(false); } }, 0);
+    commit(); onBlur && onBlur();
+  });
+  return ed;
+}
+document.addEventListener("selectionchange", () => {
+  if (!RT.box || !document.contains(RT.box)) return;
+  const sel = rtSel(RT.box); if (!sel) return;
+  RT.lastSel = { id:RT.id, sel };
+  if (RT.pending && (RT.pending.id !== RT.id || RT.pending.at !== sel[0] || sel[0] !== sel[1])) RT.pending = null;
+  fmtUpdate();
+});
+/* the editor that a format command acts on: the focused one, or the one that was focused before a palette opened */
+function rtTarget(){
+  if (RT.box && document.contains(RT.box)){ const it = itemById(RT.id); if (it) return { it, box:RT.box, sel:rtSel(RT.box) || (RT.lastSel && RT.lastSel.sel) }; }
+  if (RT.last){ const it = itemById(RT.last.id), box = el.plane.querySelector(`.note-ed[data-note="${RT.last.id}"]`); if (it && box) return { it, box, sel:RT.last.sel }; }
+  return null;
+}
+function rtApply(fn, label){
+  const t = rtTarget(); if (!t) return;
+  const { it, box } = t; let [a, b] = t.sel || [0, 0];
+  const runs = rtRead(box);
+  if (a === b){
+    /* nothing selected: the next letters typed get the style */
+    const cur = RT.pending && RT.pending.id === it.id && RT.pending.at === a ? RT.pending.st : rtStyle(rtStyleAt(runs)(Math.max(0, a - 1)));
+    box.focus(); rtSetSel(box, a); RT.pending = { id:it.id, at:a, st:rtStyle(fn(cur)) }; fmtUpdate(); return;
+  }
+  rtSet(it, rtMap(runs, a, b, fn)); rtRender(box, rtRuns(it));
+  box.focus(); rtSetSel(box, a, b); drawLinks(); commit(); fmtUpdate();
+}
+function rtToggle(k){
+  const t = rtTarget(); if (!t) return;
+  const [a, b] = t.sel || [0, 0], runs = rtRead(t.box), at = rtStyleAt(runs);
+  let on;
+  if (a === b) on = !!(RT.pending && RT.pending.id === t.it.id && RT.pending.at === a ? RT.pending.st[k] : rtStyle(at(Math.max(0, a - 1)))[k]);
+  else { on = true; for (let p = a; p < b; p++) if (!at(p)[k]){ on = false; break; } }
+  rtApply(st => { const o = { ...st }; if (on) delete o[k]; else o[k] = true; return o; });
+}
+
+/* ---- format bar: shown under the top bar while a card note is being edited ---- */
+const fmtBar = document.createElement("div"); fmtBar.className = "fmtbar"; fmtBar.id = "fmtBar"; fmtBar.hidden = true; fmtBar.setAttribute("role", "toolbar"); fmtBar.setAttribute("aria-label", "Yazı biçimi");
+fmtBar.innerHTML = `<button data-f="b" title="Kalın (Ctrl+B)" aria-label="Kalın"><b>K</b></button><button data-f="i" title="İtalik (Ctrl+I)" aria-label="İtalik"><i>İ</i></button><button data-f="u" title="Altı çizili (Ctrl+U)" aria-label="Altı çizili"><u>A</u></button>
+<span class="vsep"></span><button data-f="c" class="fm-col" title="Yazı rengi" aria-label="Yazı rengi"><span class="fm-a">A</span><i class="fm-bar"></i></button>
+<button data-f="f" class="fm-font" title="Yazı tipi" aria-label="Yazı tipi"><span class="fm-fn">Yazı tipi</span></button>
+<span class="vsep"></span><button data-f="x" title="Biçimi temizle" aria-label="Biçimi temizle"><svg viewBox="0 0 24 24"><path d="M6 5h12M12 5l-3 14M5 19l14-14" /></svg></button>`;
+document.querySelector(".subbar").appendChild(fmtBar);
+/* pressing a button must not take the focus (and the selection) away from the note */
+fmtBar.addEventListener("pointerdown", e => { if (e.target.closest("button")) e.preventDefault(); });
+fmtBar.addEventListener("mousedown", e => { if (e.target.closest("button")) e.preventDefault(); });
+const TEXT_COLORS = ["#1d1d1f","#6e6e73","#c8352a","#e5743a","#b88a00","#2f7a43","#1f8a8a","#2357b8","#6b47b8","#b8357a","#8b5a2b","#546e7a"];
+fmtBar.addEventListener("click", e => {
+  const b = e.target.closest("button"); if (!b) return; const f = b.dataset.f;
+  if (f === "b" || f === "i" || f === "u"){ rtToggle(f); return; }
+  if (f === "x"){ rtApply(() => ({})); return; }
+  const t = rtTarget(); if (!t) return; RT.last = { id:t.it.id, sel:t.sel || [0, 0] };
+  if (f === "c"){
+    const cur = fmtCur();
+    openPalette(b, { title:"Yazı rengi", named:[{ k:"default", hex:"#8e8e93", name:"Varsayılan" }], more:TEXT_COLORS, current:cur.c || "default",
+      onPick:v => { closePop(); rtApply(st => { const o = { ...st }; if (v === "default") delete o.c; else o.c = v; return o; }); } });
+  }
+  if (f === "fn" || f === "f"){
+    openFontPop(b, fmtCur().f || "", id => rtApply(st => { const o = { ...st }; if (id) o.f = id; else delete o.f; return o; }));
+  }
+});
+function fmtShow(on){ fmtBar.hidden = !on; if (!on) RT.pending = null; }
+function fmtCur(){
+  const t = rtTarget(); if (!t) return {};
+  const [a, b] = t.sel || [0, 0];
+  if (RT.pending && RT.pending.id === t.it.id && RT.pending.at === a && a === b) return RT.pending.st;
+  return rtStyle(rtStyleAt(rtRuns(t.it))(a === b ? Math.max(0, a - 1) : a));
+}
+function fmtUpdate(){
+  if (fmtBar.hidden) return;
+  const st = fmtCur();
+  for (const k of ["b", "i", "u"]) fmtBar.querySelector(`[data-f="${k}"]`).setAttribute("aria-pressed", String(!!st[k]));
+  fmtBar.querySelector(".fm-bar").style.background = st.c || "var(--ink-2)";
+  const fn = fmtBar.querySelector(".fm-fn"); fn.textContent = st.f ? fontName(st.f) : "Yazı tipi"; fn.style.fontFamily = st.f ? fontCss(st.f) : "";
+}
+
 function cardEl(it, inGroup){
   const c = document.createElement("div"); c.className = "card" + (it.type === "note" ? " isnote" : "") + (S.sel === it.id ? " selected" : ""); c.dataset.id = it.id; recAttr(c, it);
   if (it.fs && it.fs !== 1) c.style.setProperty("--fs", it.fs);
   c.dataset.color = it.color; c.dataset.frame = it.frame || "thin";
-  if (it.bg && PAPER_COLORS[it.bg]){ c.style.setProperty("--cbg-l", PAPER_COLORS[it.bg].l); c.style.setProperty("--cbg-d", PAPER_COLORS[it.bg].d); c.classList.add("tinted"); }
+  const pb = it.bg && paperOf(it.bg); if (pb){ c.style.setProperty("--cbg-l", pb.l); c.style.setProperty("--cbg-d", pb.d); c.classList.add("tinted"); }
+  if (isHex(it.cc)) c.style.setProperty("--acc", it.cc);
   if (it.font) c.style.setProperty("--cf", fontCss(it.font));
   if (!inGroup){ c.style.left = it.x + "px"; c.style.top = it.y + "px"; c.style.width = it.w + "px"; }
   const head = document.createElement("div"); head.className = "card-head";
@@ -1413,16 +2152,14 @@ function cardEl(it, inGroup){
     c.appendChild(vb);
   }
   if (it.type === "image"){ const im = document.createElement("img"); im.className = "shot"; im.alt = it.photo ? "Fotoğraf" : "Sayfa " + it.page + " görsel alıntısı"; im.draggable = false; im.src = it.src; im.onload = drawLinks; c.appendChild(im); }
-  const ta = document.createElement("textarea"); ta.className = "note"; ta.rows = 1; ta.setAttribute("aria-label", "Kart notu");
-  ta.placeholder = it.type === "note" ? "Düşünceni yaz… (formül için $E = mc^2$)" : "Not ekle…"; ta.value = it.note || ""; ta.dataset.note = it.id;
-  ta.addEventListener("input", () => { it.note = ta.value; autosize(ta); drawLinks(); save(); });
-  ta.addEventListener("change", commit); ta.addEventListener("focus", () => select(it.id));
+  /* the note: formatted text (bold, italic, underline, colour, font) edited in place */
+  let showMath = () => {};
+  const ta = noteEditor(it, () => { showMath(); drawLinks(); });
   c.appendChild(ta);
   /* when a note has formulas, show them rendered; a tap switches back to editing */
   const mv = document.createElement("div"); mv.className = "note mview"; mv.title = "Düzenlemek için dokun";
-  const showMath = () => { const on = hasMath(it.note) && document.activeElement !== ta; mv.hidden = !on; ta.hidden = on; if (on) renderMathInto(mv, it.note); };
-  mv.addEventListener("click", () => { if (Date.now() - lastDragEnd < 350 || S.linkFrom) return; mv.hidden = true; ta.hidden = false; autosize(ta); ta.focus(); });
-  ta.addEventListener("blur", () => { showMath(); drawLinks(); });
+  showMath = () => { const on = hasMath(it.note) && document.activeElement !== ta; mv.hidden = !on; ta.hidden = on; if (on) renderMathInto(mv, it.note, richOf(it)); };
+  mv.addEventListener("click", () => { if (Date.now() - lastDragEnd < 350 || S.linkFrom) return; mv.hidden = true; ta.hidden = false; ta.focus(); rtSetSel(ta, (it.note || "").length); });
   c.appendChild(mv); showMath();
   if (it.tags && it.tags.length){
     const tr = document.createElement("div"); tr.className = "ctags";
@@ -1430,7 +2167,7 @@ function cardEl(it, inGroup){
     c.appendChild(tr);
   }
   const cols = document.createElement("div"); cols.className = "colors";
-  for (const k of HL_COLORS){ const d = document.createElement("button"); d.className = "dot c-" + k + (it.color === k ? " on" : ""); d.title = CNAME[k]; d.setAttribute("aria-label", CNAME[k]); d.onclick = () => { it.color = k; S.lastColor = k; renderWs(); if (it.doc) renderDocPage(it.doc, it.page); commit(); }; cols.appendChild(d); }
+  for (const k of HL_COLORS){ const d = document.createElement("button"); d.className = "dot c-" + k + (it.color === k ? " on" : ""); d.title = CNAME[k]; d.setAttribute("aria-label", CNAME[k]); d.onclick = () => { it.color = k; delete it.cc; S.lastColor = k; S.lastCc = ""; renderWs(); if (it.doc) renderDocPage(it.doc, it.page); commit(); }; cols.appendChild(d); }
   const stb = document.createElement("button"); stb.className = "fsb cst"; stb.innerHTML = ICON.palette; stb.title = "Kağıt, çerçeve ve yazı tipi"; stb.setAttribute("aria-label", stb.title);
   stb.onclick = () => openCardStyle(it.id, stb); cols.appendChild(stb);
   const tgb = document.createElement("button"); tgb.className = "fsb ctg"; tgb.innerHTML = ICON.hash; tgb.title = "Etiketler"; tgb.setAttribute("aria-label", tgb.title);
@@ -1445,7 +2182,7 @@ function cardEl(it, inGroup){
   if (inGroup) rz.hidden = true;
   c.addEventListener("pointerdown", e => {
     if (S.linkFrom){ e.stopPropagation(); e.preventDefault(); completeLink(it.id); return; }
-    if (e.target.closest("button,textarea,input")){ e.stopPropagation(); return; }
+    if (e.target.closest("button,textarea,input,[contenteditable=\"true\"]")){ e.stopPropagation(); return; }
     e.stopPropagation(); select(it.id);
     if (e.target === rz){
       const s = view().s, st = { x:e.clientX, iw:it.w };
@@ -1471,22 +2208,23 @@ function inlineClose(t, from){
   }
   return -1;
 }
+/* text segments also carry idx: the position of each of their characters in the original note (for formatting) */
 function parseMath(t){
-  const out = []; let i = 0, buf = "";
+  const out = []; let i = 0, buf = "", idx = [];
   while (i < t.length){
-    if (t[i] === "\\" && t[i + 1] === "$"){ buf += "$"; i += 2; continue; }
+    if (t[i] === "\\" && t[i + 1] === "$"){ buf += "$"; idx.push(i + 1); i += 2; continue; }
     if (t[i] === "$"){
       const disp = t[i + 1] === "$", open = disp ? 2 : 1, close = disp ? t.indexOf("$$", i + 2) : inlineClose(t, i + 1);
       if (close > i + open && (disp || !t.slice(i + 1, close).includes("\n"))){
-        if (disp) buf = buf.replace(/\n$/, "");
-        if (buf) out.push({ t:"text", s:buf }); buf = ""; out.push({ t:"math", tex:t.slice(i + open, close).trim(), display:disp }); i = close + open;
+        if (disp && buf.endsWith("\n")){ buf = buf.slice(0, -1); idx.pop(); }
+        if (buf) out.push({ t:"text", s:buf, idx }); buf = ""; idx = []; out.push({ t:"math", tex:t.slice(i + open, close).trim(), display:disp }); i = close + open;
         if (disp && t[i] === "\n") i++;
         continue;
       }
     }
-    buf += t[i++];
+    idx.push(i); buf += t[i++];
   }
-  if (buf) out.push({ t:"text", s:buf });
+  if (buf) out.push({ t:"text", s:buf, idx });
   return out;
 }
 let mjLoad = null;
@@ -1496,10 +2234,16 @@ function loadMathJax(){
     mjLoad = loadScript("vendor/mathjax/tex-svg.js").then(() => window.MathJax.startup.promise).then(() => { try { document.head.appendChild(window.MathJax.svgStylesheet()); } catch {} }); }
   return mjLoad;
 }
-function renderMathInto(box, text){
+function renderMathInto(box, text, runs){
   box.textContent = "";
+  const sty = runs ? rtStyleAt(runs) : null;
   for (const seg of parseMath(text)){
-    if (seg.t === "text"){ box.appendChild(document.createTextNode(seg.s)); continue; }
+    if (seg.t === "text"){
+      if (!sty){ box.appendChild(document.createTextNode(seg.s)); continue; }
+      /* formatted text between the formulas: group characters that share a style */
+      let j = 0; while (j < seg.s.length){ const st = sty(seg.idx[j]); let k = j + 1; while (k < seg.s.length && rtSame(sty(seg.idx[k]), st)) k++; box.appendChild(rtNode(seg.s.slice(j, k), st)); j = k; }
+      continue;
+    }
     const span = document.createElement("span"); span.className = seg.display ? "mx mx-d" : "mx"; span.textContent = seg.tex; box.appendChild(span);
     loadMathJax().then(() => { try { const n = window.MathJax.tex2svg(seg.tex, { display:seg.display });
       if (n.querySelector("[data-mjx-error], merror")){ span.classList.add("mx-err"); span.title = "Formülde hata var"; return; }
@@ -1530,22 +2274,125 @@ function openFontPop(anchor, current, onPick){
   fontPop.innerHTML = '<div class="sh-h">Yazı tipi</div>'; fontPop.appendChild(fontList(current, id => { closePop(); onPick(id); }));
   openPop(fontPop, anchor); const on = fontPop.querySelector('[aria-pressed="true"]'); if (on) on.scrollIntoView({ block:"center" });
 }
+/* ---- wide colour palette: ready colours, any colour, recently used ---- */
+const palPop = document.createElement("div"); palPop.className = "pop pal-pop"; palPop.hidden = true; palPop.setAttribute("role", "dialog"); document.body.appendChild(palPop);
+function rememberColor(hex){ if (!isHex(hex)) return; hex = hex.toLowerCase(); S.recentColors = [hex, ...(S.recentColors || []).filter(c => c !== hex)].slice(0, 10); savePrefs(); }
+/* opts: { title, named:[{k, hex, name}], more:[hex], current, onPick(value), back } ; value is a named key or "#rrggbb" */
+function openPalette(anchor, o){
+  palPop.innerHTML = "";
+  const head = document.createElement("div"); head.className = "sh-h pal-h";
+  if (o.back){ const bk = document.createElement("button"); bk.className = "icon-btn sm"; bk.innerHTML = '<svg viewBox="0 0 24 24"><path d="m14 6-6 6 6 6"/></svg>'; bk.title = "Geri"; bk.setAttribute("aria-label", "Geri"); bk.onclick = o.back; head.appendChild(bk); }
+  const ht = document.createElement("span"); ht.textContent = o.title; head.appendChild(ht); palPop.appendChild(head);
+  const pick = v => { if (isHex(v)) rememberColor(v); o.onPick(v); };
+  const sw = (val, hex, name, wrap) => { const b = document.createElement("button"); b.className = "pal-sw"; b.style.setProperty("--sw", hex); b.title = name || hex.toUpperCase(); b.setAttribute("aria-label", b.title);
+    b.setAttribute("aria-pressed", String((o.current || "").toLowerCase() === String(val).toLowerCase())); b.onclick = () => pick(val); wrap.appendChild(b); };
+  const grid = t => { const l = document.createElement("div"); l.className = "sh-l"; l.textContent = t; palPop.appendChild(l); const g = document.createElement("div"); g.className = "pal-grid"; palPop.appendChild(g); return g; };
+  const g1 = grid("Hazır renkler"); for (const n of o.named) sw(n.k, n.hex, n.name, g1); for (const h of o.more) sw(h, h, "", g1);
+  const rec = (S.recentColors || []).filter(isHex);
+  if (rec.length){ const g2 = grid("Son kullanılanlar"); for (const h of rec) sw(h, h, "", g2); }
+  const l3 = document.createElement("div"); l3.className = "sh-l"; l3.textContent = "Özel renk"; palPop.appendChild(l3);
+  const row = document.createElement("div"); row.className = "pal-custom";
+  const cur = isHex(o.current) ? o.current : (o.named.find(n => n.k === o.current) || { hex:"#78b6ec" }).hex;
+  const inp = document.createElement("input"); inp.type = "color"; inp.value = cur; inp.setAttribute("aria-label", "Renk seç");
+  const hex = document.createElement("input"); hex.type = "text"; hex.className = "pal-hex"; hex.value = cur.toUpperCase(); hex.maxLength = 7; hex.spellcheck = false; hex.setAttribute("aria-label", "Renk kodu");
+  const ok = document.createElement("button"); ok.className = "btn sm"; ok.textContent = "Uygula";
+  const norm = v => { v = v.trim(); if (!v.startsWith("#")) v = "#" + v; if (/^#[0-9a-f]{3}$/i.test(v)) v = "#" + [...v.slice(1)].map(c => c + c).join(""); return isHex(v) ? v.toLowerCase() : null; };
+  inp.oninput = () => { hex.value = inp.value.toUpperCase(); };
+  inp.onchange = () => pick(inp.value.toLowerCase());
+  hex.onkeydown = e => { if (e.key === "Enter"){ const v = norm(hex.value); if (v) pick(v); else hex.classList.add("bad"); } };
+  hex.oninput = () => { hex.classList.remove("bad"); const v = norm(hex.value); if (v) inp.value = v; };
+  ok.onclick = () => { const v = norm(hex.value); if (v) pick(v); else hex.classList.add("bad"); };
+  row.append(inp, hex, ok); palPop.appendChild(row);
+  openPop(palPop, anchor);
+}
+const ACCENT_NAMED = () => HL_COLORS.map(k => ({ k, hex:HL_HEX[k], name:CNAME[k] }));
+const PAPER_NAMED = () => Object.entries(PAPER_COLORS).map(([k, p]) => ({ k, hex:p.l, name:p.name }));
+const accentHex = it => isHex(it.cc) ? it.cc : HL_HEX[it.color] || HL_HEX.y;
+const accentName = it => isHex(it.cc) ? it.cc.toUpperCase() : CNAME[it.color] || "";
+
+/* ---- saved card styles (v6.9.6): a name and a look; shared through library.json ---- */
+const STYLE_SEED = {
+  "s-tanim":{ name:"Tanım", look:{ color:"b", cc:"#3e63dd", bg:"sky" } },
+  "s-soru":{ name:"Soru", look:{ color:"o", bg:"cream" } },
+  "s-onemli":{ name:"Önemli", look:{ color:"p", cc:"#e5484d", bg:"rose", frame:"thick" } },
+  "s-formul":{ name:"Formül", look:{ color:"b", cc:"#8e4ec6", font:"stix-two-text" } },
+  "s-fikir":{ name:"Fikir", look:{ color:"y", bg:"yellow" } }
+};
+function cardStyles(){
+  const st = libState();
+  if (!st.stylesSeeded){ for (const [k, v] of Object.entries(STYLE_SEED)) if (!st.styles[k]) st.styles[k] = { ...v, t:1 }; st.stylesSeeded = true; libSave(st, true); }
+  return Object.entries(st.styles).filter(([, v]) => !v.del && v.look).map(([id, v]) => ({ id, ...v })).sort((a, b) => (a.o ?? a.t) - (b.o ?? b.t));
+}
+function saveCardStyle(id, val){ const st = libState(); st.styles[id] = val ? { ...val, t:Date.now() } : { del:true, t:Date.now() }; libSave(st); }
+function styleChip(sty, onClick){
+  const b = document.createElement("button"); b.className = "sty-chip"; const l = sty.look || {};
+  const acc = isHex(l.cc) ? l.cc : HL_HEX[l.color] || HL_HEX.y, pb = paperOf(l.bg || "white") || PAPER_COLORS.white;
+  b.style.setProperty("--sa", acc); b.style.setProperty("--sb", pb.l); b.style.setProperty("--sbd", pb.d); if (l.frame === "thick") b.classList.add("thick");
+  const t = document.createElement("span"); t.textContent = sty.name; if (l.font) t.style.fontFamily = fontCss(l.font); b.appendChild(t);
+  b.title = sty.name; b.onclick = onClick; return b;
+}
+/* ---- card look: copy, paste, take from another card ---- */
+const LOOK_KEYS = ["color", "cc", "bg", "frame", "font", "fs"];
+const lookOf = it => Object.fromEntries(LOOK_KEYS.filter(k => it[k] !== undefined).map(k => [k, it[k]]));
+function applyLook(it, look){
+  for (const k of LOOK_KEYS) if (k !== "color") delete it[k];
+  for (const [k, v] of Object.entries(look)) it[k] = v;
+  if (it.doc && look.color) renderDocPage(it.doc, it.page);
+}
+/* "take from another card": the next card tapped gives its look */
+el.ws.addEventListener("pointerdown", e => {
+  if (!S.pickLook) return;
+  const c = e.target.closest && e.target.closest(".card"); e.preventDefault(); e.stopPropagation();
+  const to = itemById(S.pickLook); S.pickLook = null; document.body.classList.remove("picking-look");
+  if (!c || !to){ toast("Görünüm alma iptal edildi."); return; }
+  const from = itemById(c.dataset.id); if (!from || from.id === to.id){ toast("Görünüm alma iptal edildi."); return; }
+  applyLook(to, lookOf(from)); renderWs(); select(to.id); commit(); toast("Görünüm kopyalandı.");
+}, true);
+
 function openCardStyle(id, anchor){
   const it = itemById(id); if (!it) return;
-  const apply = fn => { fn(it); renderWs(); select(id); commit(); savePrefs(); openCardStyle(id, cardEls.get(id).querySelector(".cst") || anchor); };
+  const reopen = () => { const c = cardEls.get(id); openCardStyle(id, (c && c.querySelector(".cst")) || anchor); };
+  const apply = fn => { fn(it); renderWs(); select(id); commit(); savePrefs(); reopen(); };
   stylePop.innerHTML = "";
   const h = document.createElement("div"); h.className = "sh-h"; h.textContent = it.type === "image" ? "Görsel kartı" : it.type === "note" ? "Not kartı" : "Alıntı kartı"; stylePop.appendChild(h);
   const sec = t => { const l = document.createElement("div"); l.className = "sh-l"; l.textContent = t; stylePop.appendChild(l); const r = document.createElement("div"); r.className = "st-row"; stylePop.appendChild(r); return r; };
+  /* saved styles: one tap applies colour, paper, frame, font and size together */
+  const rs = sec("Stiller"); rs.classList.add("sty-row"); const editing = S.styEdit === id;
+  for (const sty of cardStyles()){
+    const chip = styleChip(sty, () => {
+      if (editing){ askText("Stilin adı", sty.name, n => { saveCardStyle(sty.id, { name:n, look:sty.look, o:sty.o ?? sty.t }); reopen(); }); return; }
+      apply(x => applyLook(x, { color:x.color, ...sty.look }));
+    });
+    if (editing){ const x = document.createElement("span"); x.className = "sty-del"; x.textContent = "×"; x.title = "Stili sil"; x.onclick = e => { e.stopPropagation(); saveCardStyle(sty.id, null); reopen(); }; chip.appendChild(x); chip.classList.add("editing"); }
+    rs.appendChild(chip);
+  }
+  const add = document.createElement("button"); add.className = "sty-chip sty-add"; add.textContent = "+ Bu görünümü kaydet"; add.title = "Bu kartın görünümünü yeni stil olarak kaydet";
+  add.onclick = () => askText("Yeni stilin adı (ör. Tanım, Soru, Önemli)", "", n => { const look = lookOf(it); saveCardStyle("s" + uid(), { name:n, look, o:Date.now() }); toast(`"${n}" stili kaydedildi.`); reopen(); });
+  rs.appendChild(add);
+  const ed = document.createElement("button"); ed.className = "link sty-edit"; ed.textContent = editing ? "Bitti" : "Düzenle"; ed.onclick = () => { S.styEdit = editing ? null : id; reopen(); }; rs.appendChild(ed);
+  /* one button per colour; the wide palette opens from it */
+  const colorBtn = (row, hex, name, onClick) => { const b = document.createElement("button"); b.className = "col-pick"; const d = document.createElement("i"); d.style.background = hex; const t = document.createElement("span"); t.textContent = name; b.append(d, t);
+    const c = document.createElement("span"); c.className = "chev"; c.innerHTML = ICON.chevron; b.appendChild(c); b.onclick = () => onClick(b); row.appendChild(b); return b; };
   const r1 = sec("Renk (çerçeve ve başlık)");
-  for (const k of HL_COLORS){ const d = document.createElement("button"); d.className = "dot c-" + k + (it.color === k ? " on" : ""); d.title = CNAME[k]; d.setAttribute("aria-label", CNAME[k]); d.onclick = () => apply(x => { x.color = k; S.lastColor = k; if (x.doc) renderDocPage(x.doc, x.page); }); r1.appendChild(d); }
-  const r2 = sec("Kağıt");
-  for (const [k, p] of Object.entries(PAPER_COLORS)){ const b = document.createElement("button"); b.className = "paper-sw"; b.style.setProperty("--pl", p.l); b.style.setProperty("--pd", p.d); b.title = p.name; b.setAttribute("aria-label", p.name); b.setAttribute("aria-pressed", String((it.bg || "white") === k));
-    b.onclick = () => apply(x => { if (k === "white") delete x.bg; else x.bg = k; S.lastBg = k; }); r2.appendChild(b); }
+  colorBtn(r1, accentHex(it), accentName(it), b => openPalette(b, { title:"Kart rengi", named:ACCENT_NAMED(), more:ACCENT_MORE, current:isHex(it.cc) ? it.cc : it.color, back:reopen,
+    onPick:v => apply(x => { if (isHex(v)){ x.cc = v; S.lastCc = v; } else { x.color = v; delete x.cc; S.lastColor = v; S.lastCc = ""; if (x.doc) renderDocPage(x.doc, x.page); } }) }));
+  const quick = document.createElement("span"); quick.className = "st-quick";
+  for (const k of HL_COLORS){ const d = document.createElement("button"); d.className = "dot c-" + k + (!isHex(it.cc) && it.color === k ? " on" : ""); d.title = CNAME[k]; d.setAttribute("aria-label", CNAME[k]); d.onclick = () => apply(x => { x.color = k; delete x.cc; S.lastColor = k; S.lastCc = ""; if (x.doc) renderDocPage(x.doc, x.page); }); quick.appendChild(d); }
+  r1.appendChild(quick);
+  const r2 = sec("Kağıt"); const pb = paperOf(it.bg || "white") || PAPER_COLORS.white;
+  colorBtn(r2, pb.l, pb.name, b => openPalette(b, { title:"Kart kağıdı", named:PAPER_NAMED(), more:PAPER_MORE, current:it.bg || "white", back:reopen,
+    onPick:v => apply(x => { if (v === "white") delete x.bg; else x.bg = v; S.lastBg = v; }) }));
   const r3 = sec("Çerçeve"); const seg = document.createElement("span"); seg.className = "seg3"; r3.appendChild(seg);
   for (const [k, name] of Object.entries(FRAMES)){ const b = document.createElement("button"); b.textContent = name; b.setAttribute("aria-pressed", String((it.frame || "thin") === k)); b.onclick = () => apply(x => { if (k === "thin") delete x.frame; else x.frame = k; S.lastFrame = k; }); seg.appendChild(b); }
   const r4 = sec("Yazı tipi"); const fb = document.createElement("button"); fb.className = "font-pick"; fb.innerHTML = ICON.font; const fn = document.createElement("span"); fn.textContent = fontName(it.font); if (it.font) fn.style.fontFamily = fontCss(it.font); fb.appendChild(fn);
   fb.onclick = () => openFontPop(fb, it.font, fid => { if (fid) it.font = fid; else delete it.font; S.lastFont = fid; renderWs(); select(id); commit(); savePrefs(); });
   r4.appendChild(fb);
+  const r6 = sec("Çıkartma"); const sb = document.createElement("button"); sb.className = "btn sm"; sb.textContent = "Karta çıkartma ekle"; sb.onclick = () => openStickerPick(sb, v => addSticker(v, { card:id })); r6.appendChild(sb);
+  const r5 = sec("Görünüm"); const lk = document.createElement("span"); lk.className = "seg3 look-row"; r5.appendChild(lk);
+  const lb = (t, title, fn, dis) => { const b = document.createElement("button"); b.textContent = t; b.title = title; if (dis) b.disabled = true; b.onclick = fn; lk.appendChild(b); };
+  lb("Kopyala", "Bu kartın rengini, kağıdını, çerçevesini ve yazı tipini kopyala", () => { S.lookClip = lookOf(it); toast("Görünüm kopyalandı. Başka bir kartta Yapıştır'a bas."); reopen(); });
+  lb("Yapıştır", "Kopyalanan görünümü bu karta uygula", () => apply(x => applyLook(x, S.lookClip)), !S.lookClip);
+  lb("Karttan al", "Dokunacağın kartın görünümünü bu karta uygula", () => { closePop(); S.pickLook = id; document.body.classList.add("picking-look"); toast("Görünümünü almak istediğin karta dokun."); });
   const note = document.createElement("p"); note.className = "sh-note"; note.textContent = "Seçtiklerin yeni kartlarda da kullanılır."; stylePop.appendChild(note);
   openPop(stylePop, anchor);
 }
@@ -1617,7 +2464,24 @@ function boxOf(id){
   const a = screenToPlane(r.left, r.top), b = screenToPlane(r.right, r.bottom); return { x1:a.x, y1:a.y, x2:b.x, y2:b.y, cx:(a.x + b.x) / 2, cy:(a.y + b.y) / 2 };
 }
 /* a curve from box A to box B that leaves and enters at the facing edges, so an arrowhead stays visible */
-function linkCurve(A, B){
+/* link shapes (v6.9.6): curve (default), line (straight), elbow (right angles with rounded corners) */
+const LINK_SHAPES = ["line", "elbow"];
+function linkCurve(A, B, shape){
+  const c = linkCurve0(A, B); if (!shape || shape === "curve") return c;
+  const m = /^M([-\d.]+),([-\d.]+) C([-\d.]+),([-\d.]+) ([-\d.]+),([-\d.]+) ([-\d.]+),([-\d.]+)$/.exec(c.d); if (!m) return c;
+  const [x1, y1, c1x, c1y, , , x2, y2] = m.slice(1).map(Number);
+  if (shape === "line") return { d:`M${x1},${y1} L${x2},${y2}`, mx:(x1 + x2) / 2, my:(y1 + y2) / 2 };
+  const horiz = c1y === y1; /* the curve leaves sideways: elbow goes across, down, across */
+  if (horiz){
+    const mx = c1x, dy = y2 - y1, sy = Math.sign(dy) || 1, sx1 = Math.sign(mx - x1) || 1, sx2 = Math.sign(x2 - mx) || 1, r = Math.min(10, Math.abs(dy) / 2, Math.abs(mx - x1), Math.abs(x2 - mx));
+    if (Math.abs(dy) < 1) return { d:`M${x1},${y1} L${x2},${y2}`, mx, my:y1 };
+    return { d:`M${x1},${y1} H${mx - sx1 * r} Q${mx},${y1} ${mx},${y1 + sy * r} V${y2 - sy * r} Q${mx},${y2} ${mx + sx2 * r},${y2} H${x2}`, mx, my:(y1 + y2) / 2 };
+  }
+  const my = c1y, dx = x2 - x1, sx = Math.sign(dx) || 1, sy1 = Math.sign(my - y1) || 1, sy2 = Math.sign(y2 - my) || 1, r = Math.min(10, Math.abs(dx) / 2, Math.abs(my - y1), Math.abs(y2 - my));
+  if (Math.abs(dx) < 1) return { d:`M${x1},${y1} L${x2},${y2}`, mx:x1, my };
+  return { d:`M${x1},${y1} V${my - sy1 * r} Q${x1},${my} ${x1 + sx * r},${my} H${x2 - sx * r} Q${x2},${my} ${x2},${my + sy2 * r} V${y2}`, mx:(x1 + x2) / 2, my };
+}
+function linkCurve0(A, B){
   const G = 18;
   if (B.x1 - A.x2 > G || A.x1 - B.x2 > G){
     const r = B.x1 > A.x2, x1 = r ? A.x2 : A.x1, x2 = r ? B.x1 : B.x2, y1 = A.cy, y2 = B.cy, mx = (x1 + x2) / 2;
@@ -1669,7 +2533,7 @@ function drawLinks(){
     if (L.pt) B = pointBox(L.pt);
     else { const b = itemById(L.b); if (!b || b.space !== S.space) continue; B = boxOf(b.id); }
     const A = boxOf(a.id); if (!A || !B) continue;
-    const { d, mx, my } = linkCurve(A, B), on = S.selLink === L.id;
+    const { d, mx, my } = linkCurve(A, B, L.shape), on = S.selLink === L.id;
     if (on){ const halo = document.createElementNS(NS, "path"); halo.setAttribute("d", d); halo.setAttribute("class", "lk-halo"); el.links.appendChild(halo); }
     const vis = document.createElementNS(NS, "path"); vis.setAttribute("d", d); vis.setAttribute("class", "lk" + (on ? " on" : ""));
     styleLink(vis, L, "lkA", on);
@@ -1732,9 +2596,14 @@ const lkBar = (() => {
   for (const h of HEADS){ const b = document.createElement("button"); b.dataset.h = h; b.innerHTML = HI[h]; b.title = HT[h]; b.setAttribute("aria-label", HT[h]); b.onclick = () => editLink(L => setLinkHeads(L, h)); heads.appendChild(b); }
   const dash = document.createElement("button"); dash.className = "icon-btn sm lkb-dash"; dash.innerHTML = '<svg viewBox="0 0 24 24"><path d="M3 12h4M10 12h4M17 12h4"/></svg>'; dash.title = "Kesikli çizgi"; dash.setAttribute("aria-label", dash.title);
   dash.onclick = () => editLink(L => { if (L.dash) delete L.dash; else L.dash = true; S.lastLinkDash = !!L.dash; savePrefs(); });
+  const shapes = document.createElement("div"); shapes.className = "seg3 lkb-shapes";
+  const SI = { curve:'<svg viewBox="0 0 24 24"><path d="M4 17C10 17 14 7 20 7"/></svg>', line:'<svg viewBox="0 0 24 24"><path d="M4 17 20 7"/></svg>', elbow:'<svg viewBox="0 0 24 24"><path d="M4 17h6.5V7H20"/></svg>' };
+  const ST = { curve:"Eğri çizgi", line:"Düz çizgi", elbow:"Köşeli çizgi" };
+  for (const k of ["curve", "line", "elbow"]){ const b = document.createElement("button"); b.dataset.sh = k; b.innerHTML = SI[k]; b.title = ST[k]; b.setAttribute("aria-label", ST[k]);
+    b.onclick = () => editLink(L => { if (k === "curve") delete L.shape; else L.shape = k; S.lastLinkShape = k === "curve" ? "" : k; savePrefs(); }); shapes.appendChild(b); }
   const del = document.createElement("button"); del.className = "icon-btn sm lkb-del"; del.innerHTML = ICON.del; del.title = "Bağlantıyı sil"; del.setAttribute("aria-label", del.title); del.onclick = () => { const id = S.selLink; hideLkBar(); if (id) removeLink(id); };
   const sep = () => { const s = document.createElement("span"); s.className = "lkb-sep"; return s; };
-  bar.append(cols, sep(), heads, dash, sep(), del);
+  bar.append(cols, sep(), heads, dash, sep(), shapes, sep(), del);
   bar.addEventListener("pointerdown", e => e.stopPropagation());
   document.body.appendChild(bar);
   return bar;
@@ -1744,6 +2613,7 @@ function showLkBar(L, x, y){
   lkBar.querySelectorAll(".lkb-dot").forEach(b => b.classList.toggle("on", (L.color || "") === b.dataset.c));
   const h = linkHeads(L); lkBar.querySelectorAll(".lkb-heads button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.h === h)));
   lkBar.querySelector(".lkb-dash").setAttribute("aria-pressed", String(!!L.dash));
+  lkBar.querySelectorAll(".lkb-shapes button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.sh === (L.shape || "curve"))));
   lkBar.hidden = false;
   const w = lkBar.offsetWidth, hh = lkBar.offsetHeight;
   lkBar.style.left = clamp(x - w / 2, 8, window.innerWidth - w - 8) + "px";
@@ -1817,12 +2687,12 @@ $("#linkCancel").onclick = cancelLink;
 function completeLink(id){
   const a = S.linkFrom; cancelLink(); if (!a || a === id) return;
   if (S.proj.links.some(L => !L.anchor && ((L.a === a && L.b === id) || (L.a === id && L.b === a)))){ toast("Bu iki kart zaten bağlı"); return; }
-  const L = { id:uid(), a, b:id, arrow:true, ...(S.lastLinkColor ? { color:S.lastLinkColor } : {}), ...(S.lastLinkDash ? { dash:true } : {}) }; S.proj.links.push(L); selectLink(L.id); commit();
+  const L = { id:uid(), a, b:id, arrow:true, ...(S.lastLinkColor ? { color:S.lastLinkColor } : {}), ...(S.lastLinkDash ? { dash:true } : {}), ...(S.lastLinkShape ? { shape:S.lastLinkShape } : {}) }; S.proj.links.push(L); selectLink(L.id); commit();
 }
 function completeAnchor(anchor){
   const a = S.linkFrom; cancelLink(); if (!a) return;
   if (S.proj.links.some(L => L.anchor && L.a === a && L.anchor.id === anchor.id)){ toast("Bu bağlantı zaten var"); return; }
-  S.proj.links.push({ id:uid(), a, anchor, to:"anchor", ...(S.lastLinkColor ? { color:S.lastLinkColor } : {}), ...(S.lastLinkDash ? { dash:true } : {}) }); S.sel = a; renderWs(); renderAllOverlays(); commit(); toast("Kart belgedeki işarete bağlandı");
+  S.proj.links.push({ id:uid(), a, anchor, to:"anchor", ...(S.lastLinkColor ? { color:S.lastLinkColor } : {}), ...(S.lastLinkDash ? { dash:true } : {}), ...(S.lastLinkShape ? { shape:S.lastLinkShape } : {}) }); S.sel = a; renderWs(); renderAllOverlays(); commit(); toast("Kart belgedeki işarete bağlandı");
 }
 function removeLink(id){ S.proj.links = S.proj.links.filter(l => l.id !== id); S.selLink = null; if (prunePins()) renderAllOverlays(); renderWs(); commit(); toast("Bağlantı silindi", { label:"Geri al", fn:undo }); }
 /* jump to the other end of a document-to-document link, preferably in the other viewer */
@@ -1866,8 +2736,8 @@ async function goToExcerpt(id){
 function addNote(pt){
   const p = pt ? clampBox(pt.x, pt.y, 230, 110) : defaultSpot();
   const it = stamp({ id:uid(), type:"note", note:"", color:S.lastColor, space:S.space, w:230, x:p.x, y:p.y });
-  if (!it.font && S.lastFont) it.font = S.lastFont; if (!it.bg && S.lastBg && S.lastBg !== "white") it.bg = S.lastBg; if (!it.frame && S.lastFrame && S.lastFrame !== "thin") it.frame = S.lastFrame; if (!it.fs && S.lastFs !== 1){ it.fs = S.lastFs; it.w = Math.round(Math.min(900, it.w * S.lastFs)); } S.proj.items.push(it); S.sel = it.id; renderWs(); commit(); if (isNarrow()) setTab("ws"); if (!pt) showCardIfHidden(it.id);
-  const f = () => { const t = el.plane.querySelector(`textarea[data-note="${it.id}"]`); if (t && document.activeElement !== t) t.focus({ preventScroll:true }); }; f(); requestAnimationFrame(f);
+  if (!it.font && S.lastFont) it.font = S.lastFont; if (!it.bg && S.lastBg && S.lastBg !== "white") it.bg = S.lastBg; if (!it.cc && S.lastCc) it.cc = S.lastCc; if (!it.frame && S.lastFrame && S.lastFrame !== "thin") it.frame = S.lastFrame; if (!it.fs && S.lastFs !== 1){ it.fs = S.lastFs; it.w = Math.round(Math.min(900, it.w * S.lastFs)); } S.proj.items.push(it); S.sel = it.id; renderWs(); commit(); if (isNarrow()) setTab("ws"); if (!pt) showCardIfHidden(it.id);
+  const f = () => { const t = el.plane.querySelector(`.note-ed[data-note="${it.id}"]`); if (t && document.activeElement !== t) t.focus({ preventScroll:true }); }; f(); requestAnimationFrame(f);
 }
 $("#bNote").onclick = () => addNote();
 function zoomAt(cx, cy, ns){ const r = el.ws.getBoundingClientRect(), v = view(); ns = clamp(ns, 0.1, 2.5); const px = (cx - r.left - v.tx) / v.s, py = (cy - r.top - v.ty) / v.s; v.s = ns; v.tx = cx - r.left - px * ns; v.ty = cy - r.top - py * ns; applyView(); }
@@ -1886,25 +2756,29 @@ function fitAll(){
   v.tx = (r.width - (x2 - x1) * v.s) / 2 - x1 * v.s; v.ty = (r.height - (y2 - y1) * v.s) / 2 - y1 * v.s + 10; applyView(); drawLinks();
 }
 $("#bFit").onclick = () => { fitAll(); save(); };
+$("#bMini").onclick = () => toggleMini(); queueMicrotask(() => $("#bMini").setAttribute("aria-pressed", String(MINI.on)));
 
 el.ws.addEventListener("pointerdown", e => {
   if (e.pointerType === "pen" && !S.penOnly) setPenOnly(true, true);
-  if (!["pen","hl","eraser","text"].includes(S.tool)) return;
-  if (e.target.closest(".hud,.link-hint,.lk-del,.lk-pt,.spaces,.wsfind")) return;
+  if (!["pen","hl","eraser","text","lasso"].includes(S.tool)) return;
+  if (e.target.closest(".hud,.link-hint,.lk-del,.lk-pt,.spaces,.wsfind,.isel")) return;
   if (S.tool === "text"){ if (e.target.closest(".card,.group")) return; e.stopPropagation(); e.preventDefault(); const pt = screenToPlane(e.clientX, e.clientY); addNote({ x:pt.x - 20, y:pt.y - 20 }); return; }
   if (e.pointerType === "touch" && S.penOnly) return;
-  if (e.target.closest("textarea,input")) return;
+  if (e.target.closest("textarea,input,[contenteditable=\"true\"]")) return;
   e.stopPropagation(); e.preventDefault(); el.ws.setPointerCapture(e.pointerId);
   const pt = screenToPlane(e.clientX, e.clientY);
+  if (ISEL.on) iselClear();
+  if (S.tool === "lasso"){ const path = document.createElementNS(NS, "path"); path.setAttribute("class", "lasso"); el.wsInk.appendChild(path); draw = { mode:"lasso", where:"ws", pts:[[pt.x, pt.y]], path, id:e.pointerId }; return; }
   if (S.tool === "eraser"){ draw = { mode:"erase", where:"ws", id:e.pointerId }; eraseAt("ws", null, null, [pt.x, pt.y]); } else beginStroke(e, "ws", null, null, [pt.x, pt.y]);
 }, true);
 const ptrs = new Map(); let pan = null, pinch = null;
 el.ws.addEventListener("pointerdown", e => {
-  if (e.target.closest(".card,.group,.hud,.lk-hit,.lk-del,.lk-pt,.link-hint,.spaces,.wsfind")) return;
+  if (e.target.closest(".card,.group,.hud,.lk-hit,.lk-del,.lk-pt,.link-hint,.spaces,.wsfind,.stk,.stk-bar")) return;
+  if (S.selStk) stkSelect(null);
   if (S.linkFrom){
     /* linking and tapped an empty spot: the link ends right there */
     const from = S.linkFrom; cancelLink(); e.stopPropagation(); e.preventDefault();
-    const p = screenToPlane(e.clientX, e.clientY), L = { id:uid(), a:from, pt:{ x:r2(p.x), y:r2(p.y) }, heads:"end", ...(S.lastLinkColor ? { color:S.lastLinkColor } : {}), ...(S.lastLinkDash ? { dash:true } : {}) };
+    const p = screenToPlane(e.clientX, e.clientY), L = { id:uid(), a:from, pt:{ x:r2(p.x), y:r2(p.y) }, heads:"end", ...(S.lastLinkColor ? { color:S.lastLinkColor } : {}), ...(S.lastLinkDash ? { dash:true } : {}), ...(S.lastLinkShape ? { shape:S.lastLinkShape } : {}) };
     growSheet(p.x - 20, p.y - 20, p.x + 20, p.y + 20); S.proj.links.push(L); renderSheet(); selectLink(L.id); commit(); toast("Bağlantı masadaki noktada bitti. Ucunu sürükleyerek taşıyabilirsin."); return;
   }
   S.sel = null; S.selLink = null; cardEls.forEach(c => c.classList.remove("selected")); drawLinks();
@@ -1915,13 +2789,20 @@ el.ws.addEventListener("pointerdown", e => {
   else if (ptrs.size === 2){ const [a, b] = [...ptrs.values()], r = el.ws.getBoundingClientRect(), mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2; pinch = { d:Math.hypot(a.x - b.x, a.y - b.y), s:v.s, px:(mx - r.left - v.tx) / v.s, py:(my - r.top - v.ty) / v.s }; pan = null; }
 });
 el.ws.addEventListener("pointermove", e => {
-  if (draw && draw.where === "ws" && draw.id === e.pointerId){ for (const ce of pointsFrom(e)){ const pt = screenToPlane(ce.clientX, ce.clientY); if (draw.mode === "erase") eraseAt("ws", null, null, [pt.x, pt.y]); else extendStroke([pt.x, pt.y], ce.pressure, e); } if (draw.mode === "stroke") linkPreview(e); return; }
+  if (draw && draw.where === "ws" && draw.id === e.pointerId && draw.mode === "lasso"){ const q = screenToPlane(e.clientX, e.clientY), l = draw.pts[draw.pts.length - 1]; if (Math.hypot(q.x - l[0], q.y - l[1]) > 1.5 / view().s){ draw.pts.push([q.x, q.y]); draw.path.setAttribute("d", polyD(draw.pts) + "Z"); } return; }
+  if (draw && draw.where === "ws" && draw.id === e.pointerId){ for (const ce of pointsFrom(e)){ const pt = screenToPlane(ce.clientX, ce.clientY); if (draw.mode === "erase") eraseAt("ws", null, null, [pt.x, pt.y]); else extendStroke([pt.x, pt.y], ce.pressure, e, ce.timeStamp); } if (draw.mode === "stroke"){ predictStroke(e, ce => { const q = screenToPlane(ce.clientX, ce.clientY); return [q.x, q.y]; }); linkPreview(e); } return; }
   if (!ptrs.has(e.pointerId)) return;
   ptrs.set(e.pointerId, { x:e.clientX, y:e.clientY }); const v = view();
   if (pinch && ptrs.size >= 2){ const [a, b] = [...ptrs.values()], r = el.ws.getBoundingClientRect(), mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2; v.s = clamp(pinch.s * Math.hypot(a.x - b.x, a.y - b.y) / pinch.d, 0.1, 2.5); v.tx = mx - r.left - pinch.px * v.s; v.ty = my - r.top - pinch.py * v.s; applyView(); }
   else if (pan){ if (Math.hypot(e.clientX - pan.x, e.clientY - pan.y) > 4) pan.moved = true; v.tx = pan.tx + e.clientX - pan.x; v.ty = pan.ty + e.clientY - pan.y; applyView(); }
 });
 function ptrEnd(e){
+  if (draw && draw.where === "ws" && draw.id === e.pointerId && draw.mode === "lasso"){
+    const d = draw; draw = null; d.path.remove(); if (d.pts.length < 4) return;
+    const ss = strokesIn(d.pts, s => s.where === "ws" && s.space === S.space);
+    if (ss.length) iselStart({ where:"ws", ids:ss.map(s => s.id) }); else toast("Seçilecek çizim yok. Kementle kalem çizimlerinin etrafını çiz.");
+    return;
+  }
   if (draw && draw.where === "ws" && draw.id === e.pointerId){ if (draw.mode === "erase"){ const er = draw.erased; draw = null; if (er) commit(); } else if (!tryInkLink(e)) endStroke(); el.wsEmpty.hidden = spaceItems().length > 0 || S.proj.ink.some(s => s.where === "ws" && s.space === S.space); return; }
   if (!ptrs.has(e.pointerId)) return;
   ptrs.delete(e.pointerId); if (ptrs.size < 2) pinch = null;
@@ -2125,7 +3006,8 @@ async function buildZip(projRec){
   for (const d of data.docs){ const p = await DB.get("pdfs", d.fp); if (p) zip.file("docs/" + d.fp + ".pdf", p.bytes); }
   for (const r of data.recs || []){ const b = await DB.get("blobs", r.id); if (b) zip.file("audio/" + r.id + audioExt(r.mime), b.blob); }
   for (const it of data.items || []) if (it.type === "video" && !it.local){ const b = await DB.get("blobs", it.vid); if (b) zip.file("media/" + it.vid + videoExt(it.mime), b.blob); }
-  return { blob: await zip.generateAsync({ type:"blob", compression:"STORE", mimeType:EDNOTE_MIME }), name: safeName(projRec.name) + ".ednote" };
+  const body = await zip.generateAsync({ type:"blob", compression:"STORE" });
+  return { blob:new Blob([EDNOTE_SIG, body], { type:EDNOTE_MIME }), name: safeName(projRec.name) + ".ednote" };
 }
 async function exportZip(id){
   if (!id && S.sample){ toast("Örnek proje dışa aktarılamaz. Kendi PDF'ini aç."); return; }
@@ -2152,7 +3034,9 @@ function migrateV3(d3, fp, name){
 }
 async function importZip(file){
   try {
-    let zip; try { zip = await JSZip.loadAsync(file); } catch { toast("Bu dosya bir ED Note projesi değil. .ednote ya da eski .alinti.zip dosyası seç.", null, 5000); return; }
+    /* new files: signature line + zip; older files and anything renamed to .zip: a plain zip */
+    let src = file; try { const head = new TextDecoder().decode(await file.slice(0, 32).arrayBuffer()); if (head.startsWith("EDNOTE/")){ const nl = head.indexOf("\n"); if (nl > 0) src = file.slice(nl + 1); } } catch {}
+    let zip; try { zip = await JSZip.loadAsync(src); } catch { toast("Bu dosya bir ED Note projesi değil. .ednote ya da eski .alinti.zip dosyası seç.", null, 5000); return; }
     const pj = zip.file("project.json");
     if (!pj){ toast("Bu dosya bir ED Note projesi değil."); return; }
     let proj = JSON.parse(await pj.async("string"));
@@ -2203,7 +3087,7 @@ async function exportMd(){
     const tx = p.texts.filter(t => t.doc === d.fp && t.text.trim()).sort((a, b) => a.page - b.page || a.y - b.y);
     if (!ex.length && !cm.length && !tx.length) continue;
     md += `## ${stripPdf(d.name)}\n\n`;
-    for (const it of ex) md += (it.photo ? `*[Fotoğraf]*` : it.type === "image" ? `*[Görsel alıntı]*` : `> ${it.text}`) + (it.photo ? "" : `\n\n*Sayfa ${it.page}*`) + (it.note ? `\n\n${it.note}` : "") + (it.tags ? `\n\n${it.tags.map(t => "#" + t.replace(/\s/g, "_")).join(" ")}` : "") + "\n\n---\n\n";
+    for (const it of ex) md += (it.photo ? `*[Fotoğraf]*` : it.type === "image" ? `*[Görsel alıntı]*` : `> ${it.text}`) + (it.photo ? "" : `\n\n*Sayfa ${it.page}*`) + (it.note ? `\n\n${mdNote(it)}` : "") + (it.tags ? `\n\n${it.tags.map(t => "#" + t.replace(/\s/g, "_")).join(" ")}` : "") + "\n\n---\n\n";
     if (cm.length){ md += `### Yorumlar\n\n`; for (const c of cm) md += `- s. ${c.page}: "${(c.quote || "").slice(0, 80)}" ${c.text.replace(/\n/g, " ")}\n`; md += "\n"; }
     if (tx.length){ md += `### Belge üzerindeki notlar\n\n`; for (const t of tx) md += `- s. ${t.page}: ${t.text.replace(/\n/g, " ")}\n`; md += "\n"; }
   }
@@ -2212,7 +3096,7 @@ async function exportMd(){
     if (!notes.length && !groups.length) continue;
     md += `## ${sp.name}\n\n`;
     for (const g of groups){ md += `### ${g.title || "Grup"}\n\n`; for (const it of p.items.filter(i => i.group === g.id).sort((a, b) => a.ord - b.ord)) md += `- ${(it.type === "note" ? it.note : it.text || "[görsel]").replace(/\n/g, " ").slice(0, 160)}\n`; md += "\n"; }
-    for (const n of notes) md += `- ${n.note.replace(/\n/g, " ") || "(boş not)"}\n`;
+    for (const n of notes) md += `- ${mdNote(n).replace(/\n/g, " ") || "(boş not)"}\n`;
     md += "\n";
   }
   downloadBlob(new Blob([md], { type:"text/markdown" }), safeName(p.name) + "-notlar.md");
@@ -2264,7 +3148,7 @@ async function buildAnnotatedPdf(proj){
   const [fr, fb] = await Promise.all(["DejaVuSans", "DejaVuSans-Bold"].map(n => fetch(`vendor/fonts/${n}.ttf`).then(r => { if (!r.ok) throw new Error("font"); return r.arrayBuffer(); })));
   const font = await out.embedFont(fr, { subset:true }), bold = await out.embedFont(fb, { subset:true });
   /* chosen fonts are embedded only if used; anything missing falls back to DejaVu */
-  const fontsUsed = new Set([...proj.items.map(i => i.font), ...proj.texts.map(t => t.font)].filter(id => FONT_IDS.has(id))), fontOf = new Map();
+  const fontsUsed = new Set([...proj.items.map(i => i.font), ...proj.items.flatMap(i => (richOf(i) || []).map(r => r.f)), ...proj.texts.map(t => t.font)].filter(id => FONT_IDS.has(id))), fontOf = new Map();
   for (const id of fontsUsed){ try { const r = await fetch(`vendor/fonts/ed/${id}.woff`); if (r.ok) fontOf.set(id, await out.embedFont(await r.arrayBuffer(), { subset:true })); } catch {} }
   const fontFor = id => fontOf.get(id) || font;
   /* draw text with the chosen font; characters it lacks (e.g. Greek in a handwriting font) fall back to DejaVu */
@@ -2330,18 +3214,30 @@ async function buildAnnotatedPdf(proj){
     }
   }
   /* lay out a note that mixes words and formulas into rows */
-  function mathFlow(text, f, size, lh, maxW){
+  /* the font a piece of formatted text is drawn with: its own font, or the card's; bold uses DejaVu Bold where there is no other bold */
+  const pieceFont = (st, f) => { const base = st && st.f ? fontFor(st.f) : f; return st && st.b && base === font ? bold : base; };
+  function mathFlow(text, f, size, lh, maxW, runs, noMath){
+    const sty = runs ? rtStyleAt(runs) : null, wOf = p => pieceFont(p.st, f).widthOfTextAtSize(p.s, size);
     const ex = size * 0.45, space = f.widthOfTextAtSize(" ", size), rows = []; let row = { items:[], w:0, asc:size * 0.8, desc:size * 0.25, center:false };
     const push = () => { rows.push(row); row = { items:[], w:0, asc:size * 0.8, desc:size * 0.25, center:false }; };
     const add = (item, w) => { if (row.items.length && row.w + w > maxW) push(); item.x = row.w; row.items.push(item); row.w += w; };
-    for (const seg of parseMath(text)){
+    for (const seg of (noMath ? [{ t:"text", s:text, idx:Array.from({ length:text.length }, (_, n) => n) }] : parseMath(text))){
       if (seg.t === "text"){
-        const parts = safeTxt(seg.s).split(/(\n| )/);
-        for (const p of parts){ if (p === "\n"){ push(); continue; } if (p === " "){ if (row.items.length) row.w += space; continue; } if (!p) continue; add({ k:"w", s:p }, f.widthOfTextAtSize(p, size)); }
+        /* words made of pieces: a word may change style in the middle */
+        const txt = safeTxt(seg.s); let word = [];
+        const endWord = () => { if (!word.length) return; let w = 0; for (const p of word) w += wOf(p); add({ k:"w", pieces:word }, w); word = []; };
+        for (let j = 0; j < txt.length; j++){
+          const ch = txt[j];
+          if (ch === "\n"){ endWord(); push(); continue; }
+          if (ch === " "){ endWord(); if (row.items.length) row.w += space; continue; }
+          const st = sty ? sty(seg.idx[j]) : null, l = word[word.length - 1];
+          if (l && rtSame(l.st, st)) l.s += ch; else word.push({ s:ch, st });
+        }
+        endWord();
         continue;
       }
       const m = mathPng.get((seg.display ? "D|" : "I|") + seg.tex);
-      if (!m){ add({ k:"w", s:safeTxt(seg.tex) }, f.widthOfTextAtSize(safeTxt(seg.tex), size)); continue; }
+      if (!m){ add({ k:"w", pieces:[{ s:safeTxt(seg.tex), st:null }] }, f.widthOfTextAtSize(safeTxt(seg.tex), size)); continue; }
       let w = m.wEx * ex, h = m.hEx * ex; if (w > maxW){ h *= maxW / w; w = maxW; }
       const depth = -m.va * ex, item = { k:"m", key:(seg.display ? "D|" : "I|") + seg.tex, w, h, depth };
       if (seg.display){ if (row.items.length) push(); add(item, w); row.center = true; row.asc = Math.max(row.asc, h - depth); row.desc = Math.max(row.desc, depth); push(); }
@@ -2351,6 +3247,12 @@ async function buildAnnotatedPdf(proj){
     let y = 0; for (const r of rows){ const rh = Math.max(lh, r.asc + r.desc + 3); r.base = y + (rh - r.asc - r.desc) / 2 + r.asc; r.top = y; y += rh; if (r.center){ const off = (maxW - r.w) / 2; r.items.forEach(i => i.x += off); } }
     return { rows, h:y };
   }
+  const stkEmb = new Map();
+  async function emojiPng(t){
+    const c = document.createElement("canvas"); c.width = c.height = 160; const x = c.getContext("2d");
+    x.font = `124px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif`; x.textAlign = "center"; x.textBaseline = "middle"; x.fillText(t, 80, 88);
+    const b = await new Promise(r => c.toBlob(r, "image/png")); return new Uint8Array(await b.arrayBuffer());
+  }
   const imgs = new Map();
   for (const it of proj.items) if (it.type === "image" || (it.type === "video" && it.poster)){ try { imgs.set(it.id, await pngBytesOf(it.type === "video" ? it.poster : it.src)); } catch {} }
   function cardLayout(it, w){
@@ -2358,14 +3260,15 @@ async function buildAnnotatedPdf(proj){
     const inner = w - PAD * 2, parts = []; let h = PAD + 12;
     if (it.type === "excerpt"){ const lines = wrapText(it.text, cf, qs, inner - 8); parts.push({ k:"quote", lines, y:h + 6, s:qs, l:ql }); h += 8 + lines.length * ql; }
     if (it.type === "image" || it.type === "video"){ const im = imgs.get(it.id); const ih = im ? inner * im.h / im.w : 60; parts.push({ k:"img", y:h + 6, h:ih, video:it.type === "video" }); h += 10 + ih; }
-    if (hasMath(it.note) && mathPng.size){ const fl = mathFlow(it.note, cf, ns, nl, inner); parts.push({ k:"mnote", rows:fl.rows, y:h + 8, s:ns }); h += 10 + fl.h; }
+    const rich = richOf(it), useMath = hasMath(it.note) && mathPng.size;
+    if (useMath || rich){ const fl = mathFlow(it.note, cf, ns, nl, inner, rich, !useMath); parts.push({ k:"mnote", rows:fl.rows, y:h + 8, s:ns }); h += 10 + fl.h; }
     else if ((it.note || "").trim()){ const lines = wrapText(it.note, cf, ns, inner); parts.push({ k:"note", lines, y:h + 8, s:ns, l:nl }); h += 10 + lines.length * nl; }
     return { h:h + PAD, parts };
   }
   const wsPages = [];
   for (const sp of proj.spaces){
     const items = proj.items.filter(i => i.space === sp.id), inks = proj.ink.filter(s => s.where === "ws" && s.space === sp.id);
-    if (!items.length && !inks.length && !proj.links.some(l => l.at && l.at.space === sp.id)) continue;
+    if (!items.length && !inks.length && !proj.links.some(l => l.at && l.at.space === sp.id) && !(proj.stickers || []).some(x => !x.card && x.space === sp.id)) continue;
     const boxes = new Map(), groups = [];
     for (const it of items) if (!it.group){ const lay = cardLayout(it, it.w); boxes.set(it.id, { it, x:it.x, y:it.y, w:it.w, h:lay.h, lay }); }
     for (const g of proj.groups.filter(g => g.space === sp.id)){
@@ -2379,6 +3282,7 @@ async function buildAnnotatedPdf(proj){
     for (const st of inks) for (const q of st.pts) grow(q[0] - st.w, q[1] - st.w, q[0] + st.w, q[1] + st.w);
     for (const l of proj.links) if (l.pt && boxes.has(l.a)) grow(l.pt.x - 10, l.pt.y - 10, l.pt.x + 10, l.pt.y + 10);
     for (const l of proj.links) if (l.at && l.at.space === sp.id) grow(l.at.x - 14, l.at.y - 14, l.at.x + 14, l.at.y + 14);
+    for (const kx of proj.stickers || []) if (!kx.card && kx.space === sp.id) grow(kx.x - kx.s * 0.75, kx.y - kx.s * 0.75, kx.x + kx.s * 0.75, kx.y + kx.s * 0.75);
     const sh = sp.sheet || { x:x1 - 40, y:y1 - 40, w:x2 - x1 + 80, h:y2 - y1 + 80 };
     let cx1 = Math.max(sh.x, x1 - 36), cy1 = Math.max(sh.y, y1 - 60), cx2 = Math.min(sh.x + sh.w, x2 + 36), cy2 = Math.min(sh.y + sh.h, y2 + 36);
     if (cx2 - cx1 < 595){ const add = 595 - (cx2 - cx1); cx2 = Math.min(sh.x + sh.w, cx2 + add); cx1 = Math.max(sh.x, cx2 - 595); }
@@ -2418,15 +3322,18 @@ async function buildAnnotatedPdf(proj){
     if (st.where !== "pdf" || !hasPage(st.doc, st.page)) continue;
     const page = pagesOf.get(st.doc)[st.page - 1], pts = st.pts.map(q => P(st.doc, st.page, q[0], q[1])), w = st.pr ? st.w * 0.9 : st.w;
     const xs = pts.map(q => q[0]), ys = pts.map(q => q[1]), bb = [Math.min(...xs) - w, Math.min(...ys) - w, Math.max(...xs) + w, Math.max(...ys) + w];
-    const col = hexRgb(st.kind === "hl" ? HL_HEX[st.color] : PEN_HEX[st.color]);
+    const col = hexRgb(inkHex(st));
     let path = `${n2(pts[0][0])} ${n2(pts[0][1])} m `; if (pts.length === 1) path += `${n2(pts[0][0] + 0.01)} ${n2(pts[0][1])} l `; for (let i = 1; i < pts.length; i++) path += `${n2(pts[i][0])} ${n2(pts[i][1])} l `;
-    const ops = `${st.kind === "hl" ? "/G0 gs " : ""}${col.map(n2).join(" ")} RG ${n2(w)} w 1 J 1 j ${path}S`;
+    let ops = `${st.kind === "hl" ? "/G0 gs " : ""}${col.map(n2).join(" ")} RG ${n2(w)} w 1 J 1 j ${path}S`;
+    /* calligraphy: the appearance is the filled nib shape */
+    if (st.tip === "callig" && st.pts.length > 1){ const { L, R } = outlineSides(st.pts, st.w, st.pr, true), poly = [...L, ...R.reverse()].map(q => P(st.doc, st.page, q[0], q[1]));
+      ops = `${col.map(n2).join(" ")} rg ` + poly.map((q, i) => `${n2(q[0])} ${n2(q[1])} ${i ? "l" : "m"}`).join(" ") + " h f"; }
     addAnnot(page, { Subtype:"Ink", Rect:bb, InkList:[pts.flat()], C:col, BS:{ W:w }, ...(st.kind === "hl" ? { CA:0.42 } : {}), NM:txt(st.id),
       AP:{ N:apForm(bb, ops, st.kind === "hl" ? { BM:"Multiply", CA:0.42, ca:0.42 } : null) } });
   }
   for (const t of proj.texts){
     if (!hasPage(t.doc, t.page) || !t.text.trim()) continue;
-    const page = pagesOf.get(t.doc)[t.page - 1], [x, top] = P(t.doc, t.page, t.x, t.y), col = rgb(...hexRgb(PEN_HEX[t.color] || PEN_HEX.k));
+    const page = pagesOf.get(t.doc)[t.page - 1], [x, top] = P(t.doc, t.page, t.x, t.y), col = rgb(...hexRgb(isHex(t.color) ? t.color : PEN_HEX[t.color] || PEN_HEX.k));
     const tf = fontFor(t.font); wrapText(t.text, tf, t.size, t.w).forEach((ln, i) => drawTxt(page, ln, { x, y:top - t.size * (i + 1) * 1.22, size:t.size, font:tf, color:col }));
   }
   for (const b of proj.bookmarks){ const pg = hasPage(b.doc, b.page); if (pg) outline.push({ title:`${stripPdf((proj.docs.find(d => d.fp === b.doc) || {}).name || "")} · ${b.title}`, page:pg, top:pg.getHeight() }); }
@@ -2443,7 +3350,7 @@ async function buildAnnotatedPdf(proj){
     const X = x => (x - cx1) * k, Y = y => H - (y - cy1) * k;
     const svg = (d, opt) => page.drawSvgPath(d, { x:-cx1 * k, y:H + cy1 * k, scale:k, ...opt });
     outline.push({ title:`Masa: ${sp.name}`, page, top:H });
-    const paperHex = (PAPER_COLORS[sp.paper] || { l:"#fdfdfb" }).l;
+    const paperHex = (paperOf(sp.paper) || { l:"#fdfdfb" }).l;
     page.drawRectangle({ x:0, y:0, width:wp.W, height:H, color:rgb(...hexRgb(paperHex === "#ffffff" ? "#fdfdfb" : paperHex)) });
     /* notebook pattern, aligned to the sheet like in the app */
     const pat = sp.pattern || "dot", gx = (step, from) => { const a = []; for (let v = from + Math.ceil((cx1 - from) / step) * step; v <= cx1 + wp.W / k; v += step) a.push(v); return a; };
@@ -2458,7 +3365,8 @@ async function buildAnnotatedPdf(proj){
     page.drawText(safeTxt(proj.name), { x:24 + bold.widthOfTextAtSize(safeTxt(sp.name), 11), y:H - 26, size:9, font, color:INK2 });
     /* groups */
     for (const g of wp.groups){
-      svg(rr(g.x, g.y, g.w, g.h, 10), { color:rgb(.945, .945, .93), borderColor:HAIR, borderWidth:0.6 });
+      const gc = isHex(g.g.c) ? rgb(...hexRgb(g.g.c)) : null, gpp = g.g.bg && paperOf(g.g.bg);
+      svg(rr(g.x, g.y, g.w, g.h, 10), { color:gpp ? rgb(...hexRgb(gpp.l)) : gc ? rgb(...hexRgb(mixHex(g.g.c, "#ffffff", 0.86))) : rgb(.945, .945, .93), borderColor:gc || HAIR, borderWidth:gc ? 1.4 : 0.6 });
       page.drawText(safeTxt(g.g.title || "Grup"), { x:X(g.x + 12), y:Y(g.y + 20), size:10 * k, font:bold, color:INK });
       const cnt = `${g.n} kart`; page.drawText(cnt, { x:X(g.x + g.w - 12) - font.widthOfTextAtSize(cnt, 8 * k), y:Y(g.y + 20), size:8 * k, font, color:INK2 });
     }
@@ -2467,7 +3375,7 @@ async function buildAnnotatedPdf(proj){
       if (l.anchor || l.pins) continue; const A = wp.boxes.get(l.a), B = l.pt ? null : wp.boxes.get(l.b); if (!A || (!B && !l.pt)) continue;
       const bx = b => ({ x1:b.x, y1:b.y, x2:b.x + b.w, y2:b.y + b.h, cx:b.x + b.w / 2, cy:b.y + b.h / 2 });
       const col = l.color && LINK_COLORS[l.color] ? rgb(...hexRgb(LINK_COLORS[l.color])) : rgb(.55, .55, .57), hd = linkHeads(l);
-      const { d } = linkCurve(bx(A), l.pt ? pointBox(l.pt) : bx(B)); svg(d, { borderColor:col, borderWidth:l.color ? 1.6 : 1.2, ...(l.dash ? { borderDashArray:[6, 4] } : {}) });
+      const { d } = linkCurve(bx(A), l.pt ? pointBox(l.pt) : bx(B), l.shape); svg(d, { borderColor:col, borderWidth:l.color ? 1.6 : 1.2, ...(l.dash ? { borderDashArray:[6, 4] } : {}) });
       const m = d.match(/^M([-\d.]+),([-\d.]+) C([-\d.]+),([-\d.]+) ([-\d.]+),([-\d.]+) ([-\d.]+),([-\d.]+)$/);
       const head = (ax, ay, ex, ey) => { const ang = Math.atan2(ey - ay, ex - ax) || 0, s = 9, p1 = [ex - s * Math.cos(ang - 0.42), ey - s * Math.sin(ang - 0.42)], p2 = [ex - s * Math.cos(ang + 0.42), ey - s * Math.sin(ang + 0.42)];
         svg(`M${ex},${ey} L${p1[0]},${p1[1]} L${p2[0]},${p2[1]} Z`, { color:col }); };
@@ -2479,8 +3387,8 @@ async function buildAnnotatedPdf(proj){
     /* cards */
     for (const b of wp.boxes.values()){
       const { it, x, y, w, h, lay } = b;
-      const dotCol = rgb(...hexRgb(HL_HEX[it.color] || HL_HEX.y)), frame = it.frame || "thin";
-      svg(rr(x, y, w, h, 9), { color:rgb(...hexRgb((PAPER_COLORS[it.bg] || PAPER_COLORS.white).l)) });
+      const dotCol = rgb(...hexRgb(isHex(it.cc) ? it.cc : HL_HEX[it.color] || HL_HEX.y)), frame = it.frame || "thin";
+      svg(rr(x, y, w, h, 9), { color:rgb(...hexRgb((paperOf(it.bg) || PAPER_COLORS.white).l)) });
       /* coloured header strip and frame, like in the app */
       svg(`M${x},${y + 9} Q${x},${y} ${x + 9},${y} H${x + w - 9} Q${x + w},${y} ${x + w},${y + 9} V${y + PAD + 15} H${x} Z`, { color:dotCol, opacity:0.24 });
       if (frame === "none") svg(rr(x, y, w, h, 9), { borderColor:HAIR, borderWidth:0.7 });
@@ -2498,7 +3406,17 @@ async function buildAnnotatedPdf(proj){
         }
         if (part.k === "img"){ const im = imgs.get(it.id); if (im){ const emb = await out.embedPng(im.bytes); page.drawImage(emb, { x:X(x + PAD), y:Y(y + part.y + part.h), width:(w - PAD * 2) * k, height:part.h * k }); } }
         if (part.k === "mnote") for (const row of part.rows) for (const item of row.items){
-          if (item.k === "w") drawTxt(page, item.s, { x:X(x + PAD + item.x), y:Y(y + part.y + row.base), size:part.s * k, font:fontFor(it.font), color:it.type === "note" ? INK : INK2 });
+          if (item.k === "w"){
+            let px = x + PAD + item.x; const by = y + part.y + row.base, base = it.type === "note" ? INK : INK2;
+            for (const pc of item.pieces){
+              const st = pc.st || {}, pf = pieceFont(st, fontFor(it.font)), w = pf.widthOfTextAtSize(pc.s, part.s), col = st.c ? rgb(...hexRgb(st.c)) : base;
+              const o = { x:X(px), y:Y(by), size:part.s * k, font:pf, color:col, ...(st.i ? { ySkew:L.degrees(12) } : {}) };
+              drawTxt(page, pc.s, o);
+              if (st.b && pf !== bold) drawTxt(page, pc.s, { ...o, x:o.x + 0.35 * k }); /* no bold cut of this font: draw twice */
+              if (st.u) page.drawLine({ start:{ x:X(px), y:Y(by + part.s * 0.14) }, end:{ x:X(px + w), y:Y(by + part.s * 0.14) }, thickness:Math.max(0.5, part.s * 0.06 * k), color:col });
+              px += w;
+            }
+          }
           else { let e = mathEmb.get(item.key); if (!e){ e = await out.embedPng(mathPng.get(item.key).bytes); mathEmb.set(item.key, e); }
             page.drawImage(e, { x:X(x + PAD + item.x), y:Y(y + part.y + row.base + item.depth), width:item.w * k, height:item.h * k }); }
         }
@@ -2508,8 +3426,22 @@ async function buildAnnotatedPdf(proj){
     }
     /* workspace ink */
     for (const st of wp.inks){
-      const col = rgb(...hexRgb(st.kind === "hl" ? HL_HEX[st.color] : PEN_HEX[st.color]));
-      svg(polyD(st.pts), { borderColor:col, borderWidth:(st.pr ? st.w * 0.9 : st.w), borderOpacity:st.kind === "hl" ? 0.42 : 1, borderLineCap:LineCapStyle.Round });
+      const col = rgb(...hexRgb(inkHex(st)));
+      if (st.tip === "callig") svg(outlineD(st.pts, st.w, st.pr, true), { color:col });
+      else svg(inkD(st), { borderColor:col, borderWidth:(st.pr ? st.w * 0.9 : st.w), borderOpacity:st.kind === "hl" ? 0.42 : st.tip === "pencil" ? 0.82 : 1, borderLineCap:LineCapStyle.Round });
+    }
+    /* stickers (v6.9.6): emoji are drawn to a picture first, so the PDF shows them in colour */
+    for (const kx of proj.stickers || []){
+      let cx, cy;
+      if (kx.card){ const b = wp.boxes.get(kx.card); if (!b) continue; cx = b.x + kx.fx * b.w; cy = b.y + kx.y; }
+      else if (kx.space === wp.sp.id){ cx = kx.x; cy = kx.y; } else continue;
+      try {
+        const key = kx.img || "e:" + kx.e; let emb = stkEmb.get(key);
+        if (!emb){ const png = kx.img ? (await pngBytesOf(kx.img)).bytes : await emojiPng(kx.e); emb = await out.embedPng(png); stkEmb.set(key, emb); }
+        const sz = kx.s * k, ar = emb.height / emb.width, w = kx.img ? (ar > 1 ? sz / ar : sz) : sz, h = kx.img ? w * ar : sz;
+        const th = -(kx.r || 0) * Math.PI / 180, PX = X(cx), PY = Y(cy);
+        page.drawImage(emb, { x:PX - (w / 2 * Math.cos(th) - h / 2 * Math.sin(th)), y:PY - (w / 2 * Math.sin(th) + h / 2 * Math.cos(th)), width:w, height:h, rotate:L.degrees(-(kx.r || 0)) });
+      } catch (e){ console.warn("sticker", e); }
     }
     for (const b of wp.boxes.values()) cardBadge.set(b.it.id, { wp, b, used:0, total:numbered.filter(x => x.card.id === b.it.id).length });
   }
@@ -2605,7 +3537,7 @@ function fitSheetToContent(q, sp){
   if (x2 > sh.x + sh.w) sh.w = Math.ceil(x2 + m - sh.x);
   if (y2 > sh.y + sh.h) sh.h = Math.ceil(y2 + m - sh.y);
 }
-function linkLook(l){ return { ...(LINK_COLORS[l.color] ? { color:l.color } : {}), ...(HEADS.includes(l.heads) ? { heads:l.heads } : {}), ...(l.dash ? { dash:true } : {}) }; }
+function linkLook(l){ return { ...(LINK_COLORS[l.color] ? { color:l.color } : {}), ...(HEADS.includes(l.heads) ? { heads:l.heads } : {}), ...(l.dash ? { dash:true } : {}), ...(LINK_SHAPES.includes(l.shape) ? { shape:l.shape } : {}) }; }
 function cleanTags(t){ if (!Array.isArray(t)) return {}; const out = [...new Set(t.map(normTag).filter(Boolean))].slice(0, 30); return out.length ? { tags:out } : {}; }
 function cleanProject(p){
   const q = emptyProject(p.name);
@@ -2613,24 +3545,26 @@ function cleanProject(p){
   q.docs = (p.docs || []).filter(d => d && d.fp).map(d => ({ fp:String(d.fp), name:String(d.name || "Belge.pdf") }));
   q.spaces = (p.spaces || []).filter(s => s && s.id).map(s => ({ id:String(s.id), name:String(s.name || "Masa"), view: s.view && isFinite(s.view.s) ? { tx:+s.view.tx || 0, ty:+s.view.ty || 0, s:clamp(+s.view.s, 0.1, 2.5) } : { tx:40, ty:60, s:1 },
     sheet: s.sheet && [s.sheet.x, s.sheet.y, s.sheet.w, s.sheet.h].every(isFinite) && s.sheet.w > 0 && s.sheet.h > 0 ? { x:+s.sheet.x, y:+s.sheet.y, w:+s.sheet.w, h:+s.sheet.h } : null,
-    pattern: PATTERNS[s.pattern] ? s.pattern : "dot", ...(PAPER_COLORS[s.paper] && s.paper !== "white" ? { paper:s.paper } : {}) }));
+    ...(DESKS[s.desk] && s.desk !== "plain" ? { desk:s.desk } : {}), ...(s.grain ? { grain:true } : {}),
+    pattern: PATTERNS[s.pattern] ? s.pattern : "dot", ...(okPaper(s.paper) ? { paper:s.paper } : {}) }));
   if (!q.spaces.length) q.spaces = emptyProject().spaces;
   const sids = new Set(q.spaces.map(s => s.id)), fps = new Set(q.docs.map(d => d.fp)), s0 = q.spaces[0].id;
-  q.groups = (p.groups || []).filter(g => g && g.id).map(g => ({ id:String(g.id), space:sids.has(g.space) ? g.space : s0, x:+g.x || 0, y:+g.y || 0, w:clamp(+g.w || 280, 200, 960), title:String(g.title || ""), collapsed:!!g.collapsed }));
+  q.groups = (p.groups || []).filter(g => g && g.id).map(g => ({ id:String(g.id), space:sids.has(g.space) ? g.space : s0, x:+g.x || 0, y:+g.y || 0, w:clamp(+g.w || 280, 200, 960), title:String(g.title || ""), collapsed:!!g.collapsed, ...(isHex(g.c) ? { c:g.c.toLowerCase() } : {}), ...(okPaper(g.bg) || g.bg === "white" ? { bg:g.bg } : {}) }));
   const gids = new Set(q.groups.map(g => g.id));
   q.items = (p.items || []).filter(i => i && typeof i.id === "string" && ["excerpt","note","image","video"].includes(i.type) && (i.type !== "image" || /^data:image\/(png|webp|jpeg);base64,/.test(i.src || "")) && (i.type === "note" || i.type === "video" || fps.has(i.doc))).map(i => ({
     id:i.id, type:i.type, text:String(i.text || ""), note:String(i.note || ""), ...(i.type !== "note" && i.type !== "video" ? { doc:i.doc, page:+i.page || 1, rects:cleanRects(i.rects) } : {}), ...(i.type === "image" ? { src:i.src } : {}),
     ...(i.type === "video" ? { vid:String(i.vid || i.id), name:String(i.name || "video.mp4"), mime:String(i.mime || "video/mp4"), size:+i.size || 0, dur:+i.dur || 0, vw:+i.vw || 0, vh:+i.vh || 0, ...(/^data:image\/jpeg;base64,/.test(i.poster || "") ? { poster:i.poster } : {}), ...(i.local ? { local:true } : {}) } : {}),
     space:sids.has(i.space) ? i.space : s0, color:HL_COLORS.includes(i.color) ? i.color : "y", x:+i.x || 0, y:+i.y || 0, w:clamp(+i.w || 240, 170, 900),
     ...(isFinite(i.fs) && +i.fs !== 1 ? { fs:clamp(+i.fs, 0.7, 3) } : {}),
-    ...(PAPER_COLORS[i.bg] && i.bg !== "white" ? { bg:i.bg } : {}), ...(FRAMES[i.frame] && i.frame !== "thin" ? { frame:i.frame } : {}), ...(FONT_IDS.has(i.font) ? { font:i.font } : {}),
+    ...(okPaper(i.bg) ? { bg:i.bg } : {}), ...(isHex(i.cc) ? { cc:i.cc.toLowerCase() } : {}), ...cleanRich(i), ...(FRAMES[i.frame] && i.frame !== "thin" ? { frame:i.frame } : {}), ...(FONT_IDS.has(i.font) ? { font:i.font } : {}),
     ...(gids.has(i.group) ? { group:i.group, ord:+i.ord || 0 } : {}), ...cleanTags(i.tags), ...(i.type === "image" && i.photo ? { photo:true } : {}), ...recOf(i) }));
   const ids = new Set(q.items.map(i => i.id));
   q.ink = (p.ink || []).filter(s => s && Array.isArray(s.pts) && s.pts.length && ((s.where === "pdf" && fps.has(s.doc)) || s.where === "ws")).map(s => ({
     id:String(s.id || uid()), where:s.where, ...(s.where === "pdf" ? { doc:s.doc, page:+s.page || 1 } : { space:sids.has(s.space) ? s.space : s0 }), kind:s.kind === "hl" ? "hl" : "pen",
-    color:(s.kind === "hl" ? HL_COLORS : PEN_COLORS).includes(s.color) ? s.color : (s.kind === "hl" ? "y" : "k"), w:clamp(+s.w || 2, 0.5, 40), pr:!!s.pr,
+    color:(s.kind === "hl" ? HL_COLORS : PEN_COLORS).includes(s.color) ? s.color : isHex(s.color) ? s.color.toLowerCase() : (s.kind === "hl" ? "y" : "k"), w:clamp(+s.w || 2, 0.5, 40), pr:!!s.pr, ...(s.sh ? { sh:1 } : {}),
+    ...(s.kind !== "hl" && TIPS.includes(s.tip) ? { tip:s.tip } : {}),
     pts:s.pts.filter(v => Array.isArray(v) && isFinite(v[0]) && isFinite(v[1])).map(v => [+v[0], +v[1], +(v[2] ?? 0.5)]), ...recOf(s) }));
-  q.texts = (p.texts || []).filter(t => t && typeof t.text === "string" && fps.has(t.doc)).map(t => ({ id:String(t.id || uid()), doc:t.doc, page:+t.page || 1, x:+t.x || 0, y:+t.y || 0, w:clamp(+t.w || 180, 40, 600), text:t.text, color:PEN_COLORS.includes(t.color) ? t.color : "k", size:clamp(+t.size || 11, 6, 40), ...(FONT_IDS.has(t.font) ? { font:t.font } : {}), ...recOf(t) }));
+  q.texts = (p.texts || []).filter(t => t && typeof t.text === "string" && fps.has(t.doc)).map(t => ({ id:String(t.id || uid()), doc:t.doc, page:+t.page || 1, x:+t.x || 0, y:+t.y || 0, w:clamp(+t.w || 180, 40, 600), text:t.text, color:PEN_COLORS.includes(t.color) ? t.color : isHex(t.color) ? t.color.toLowerCase() : "k", size:clamp(+t.size || 11, 6, 40), ...(FONT_IDS.has(t.font) ? { font:t.font } : {}), ...recOf(t) }));
   q.comments = (p.comments || []).filter(c => c && fps.has(c.doc)).map(c => ({ id:String(c.id || uid()), doc:c.doc, page:+c.page || 1, rects:cleanRects(c.rects), quote:String(c.quote || ""), text:String(c.text || ""), ...recOf(c) }));
   q.pins = (p.pins || []).filter(n => n && fps.has(n.doc) && isFinite(n.x) && isFinite(n.y)).map(n => ({ id:String(n.id || uid()), doc:n.doc, page:+n.page || 1, x:+n.x, y:+n.y, ...recOf(n) }));
   q.bookmarks = (p.bookmarks || []).filter(b => b && fps.has(b.doc)).map(b => ({ id:String(b.id || uid()), doc:b.doc, page:+b.page || 1, title:String(b.title || "Yer imi") }));
@@ -2647,7 +3581,24 @@ function cleanProject(p){
   q.pins = q.pins.filter(n => pinUsed(q.links, n.id));
   q.recs = (p.recs || []).filter(r => r && typeof r.id === "string").map(r => ({ id:r.id, title:String(r.title || "Kayıt"), doc:fps.has(r.doc) ? r.doc : (q.docs[0] && q.docs[0].fp), page:+r.page || 1, startedAt:r.startedAt || new Date().toISOString(), dur:+r.dur || 0, mime:String(r.mime || "audio/webm"), mode:r.mode === "keep" ? "keep" : "trace" }));
   for (const sp of q.spaces) fitSheetToContent(q, sp);
+  /* v6.9.6 stickers */
+  { const sids2 = new Set(q.spaces.map(x => x.id)), ids2 = new Set(q.items.map(x => x.id)), out = [];
+    for (const k of Array.isArray(p.stickers) ? p.stickers : []){
+      if (!k || typeof k.id !== "string") continue;
+      const look = /^data:image\/(png|webp|jpeg);base64,/.test(k.img || "") ? { img:k.img } : typeof k.e === "string" && k.e.trim() && k.e.length <= 16 ? { e:k.e } : null; if (!look) continue;
+      const base = { id:k.id, ...look, s:clamp(+k.s || 64, 16, 400), r:clamp(+k.r || 0, -180, 180) };
+      if (ids2.has(k.card)) out.push({ ...base, card:k.card, fx:clamp(+k.fx || 0, -0.5, 1.5), y:+k.y || 0 });
+      else if (sids2.has(k.space) && isFinite(k.x) && isFinite(k.y)) out.push({ ...base, space:k.space, x:+k.x, y:+k.y });
+    }
+    if (out.length) q.stickers = out; }
   if (cleanPath(p.folder)) q.folder = cleanPath(p.folder); if (isFinite(p.trashed) && +p.trashed > 0) q.trashed = +p.trashed;
+  /* v6.9.5 library looks: label colour, star, pin, cover, reading progress (older versions ignore them) */
+  if (isHex(p.label)) q.label = p.label.toLowerCase(); if (p.star) q.star = true; if (p.pin) q.pin = true;
+  if (p.cover && typeof p.cover === "object"){
+    if (/^data:image\/(jpeg|png|webp);base64,/.test(p.cover.img || "")) q.cover = { img:p.cover.img };
+    else if (q.docs.some(d => d.fp === p.cover.fp) && +p.cover.page >= 1) q.cover = { fp:p.cover.fp, page:Math.floor(+p.cover.page) };
+  }
+  if (p.read && typeof p.read === "object"){ const rd = {}; for (const d of q.docs){ const x = p.read[d.fp]; if (Array.isArray(x) && +x[1] > 0) rd[d.fp] = [clamp(Math.floor(+x[0] || 0), 0, +x[1]), Math.floor(+x[1])]; } if (Object.keys(rd).length) q.read = rd; }
   const ui = p.ui || {}; q.ui = { space:sids.has(ui.space) ? ui.space : s0, viewers:(ui.viewers || []).filter(f => fps.has(f)), split:!!ui.split && q.docs.length > 0 };
   return q;
 }
@@ -2724,8 +3675,47 @@ const parentOf = p => p.includes("/") ? p.slice(0, p.lastIndexOf("/")) : "";
 const baseOf = p => p.slice(p.lastIndexOf("/") + 1);
 const openedMap = () => { try { return JSON.parse(ls.get("ednote:opened") || "{}"); } catch { return {}; } };
 function markOpened(id){ const m = openedMap(); m[id] = Date.now(); ls.set("ednote:opened", JSON.stringify(m)); }
-const savedFolders = () => { try { return JSON.parse(ls.get("ednote:folders") || "[]").map(cleanPath).filter(Boolean); } catch { return []; } };
-const saveFolders = a => ls.set("ednote:folders", JSON.stringify([...new Set(a)]));
+/* ---- library state kept on this device and shared through OneDrive (library.json):
+   folders (also empty ones), each folder's look, and the app's look. Every entry has a time stamp t; the newer one wins.
+   A removed folder stays as { del:true, t } so the removal reaches the other devices too. ---- */
+const LIBS_KEY = "ednote:lib";
+function libState(){
+  let st = null; try { st = JSON.parse(ls.get(LIBS_KEY) || "null"); } catch {}
+  if (!st || typeof st !== "object"){ /* first run of v6.9.5: take over the old list of empty folders */
+    st = { v:1, folders:{}, looks:{}, app:{} };
+    try { for (const f of JSON.parse(ls.get("ednote:folders") || "[]")){ const c = cleanPath(f); if (c) st.folders[c] = { t:1 }; } } catch {}
+    ls.set(LIBS_KEY, JSON.stringify(st));
+  }
+  st.folders = st.folders || {}; st.looks = st.looks || {}; st.app = st.app || {}; st.styles = st.styles || {}; st.pens = st.pens || {};
+  return st;
+}
+function libSave(st, quiet){ ls.set(LIBS_KEY, JSON.stringify(st)); if (!quiet) try { OD.soon(4000); } catch {} }
+const savedFolders = () => Object.entries(libState().folders).filter(([, v]) => !v.del).map(([k]) => cleanPath(k)).filter(Boolean);
+function saveFolders(a){
+  const st = libState(), want = new Set(a.map(cleanPath).filter(Boolean)), now = Date.now();
+  for (const f of want) if (!st.folders[f] || st.folders[f].del) st.folders[f] = { t:now };
+  for (const [f, v] of Object.entries(st.folders)) if (!v.del && !want.has(f)) st.folders[f] = { del:true, t:now };
+  libSave(st);
+}
+/* merge two library states: for every folder, look and the app look, the newer entry wins */
+function mergeLib(a, b){
+  const out = { v:1, folders:{}, looks:{}, styles:{}, pens:{}, reads:{}, app:{} };
+  for (const k of ["folders", "looks", "styles", "pens", "reads"]){ const A = (a && a[k]) || {}, B = (b && b[k]) || {};
+    for (const key of new Set([...Object.keys(A), ...Object.keys(B)])){ const x = A[key], y = B[key]; out[k][key] = !x ? y : !y ? x : (+y.t || 0) > (+x.t || 0) ? y : x; } }
+  const x = (a && a.app) || {}, y = (b && b.app) || {}; out.app = (+y.t || 0) > (+x.t || 0) ? y : x;
+  return out;
+}
+const libKey = st => JSON.stringify(st, (k, v) => v && typeof v === "object" && !Array.isArray(v) ? Object.fromEntries(Object.entries(v).sort(([p], [q]) => p < q ? -1 : p > q ? 1 : 0)) : v);
+const folderLook = path => { const l = libState().looks[path]; return l && !l.del ? l : {}; };
+function setFolderLook(path, look){ const st = libState(); st.looks[path] = { ...look, t:Date.now() }; libSave(st); }
+function moveFolderLooks(from, to){
+  const st = libState(), now = Date.now();
+  for (const [k, v] of Object.entries(st.looks)){
+    if (v.del || !(k === from || k.startsWith(from + "/"))) continue;
+    const nk = to ? to + k.slice(from.length) : null; if (nk) st.looks[nk] = { ...v, t:now }; st.looks[k] = { del:true, t:now };
+  }
+  libSave(st);
+}
 function allFolders(recs){
   const set = new Set(savedFolders());
   for (const r of recs){ let f = cleanPath(r.data && r.data.folder); while (f){ set.add(f); f = parentOf(f); } }
@@ -2742,24 +3732,226 @@ const thumbQ = []; let thumbBusy = false;
 async function pumpThumbs(){
   if (thumbBusy) return; thumbBusy = true;
   while (thumbQ.length){
-    const { fp, img } = thumbQ.shift();
+    const { fp, img, page:pn = 1 } = thumbQ.shift(), key = "thumb:" + fp + (pn > 1 ? ":" + pn : "");
     try {
-      let t = await DB.get("meta", "thumb:" + fp).catch(() => null);
+      let t = await DB.get("meta", key).catch(() => null);
       if (!t){
         const rec = await DB.get("pdfs", fp).catch(() => null); if (!rec) continue;
         const pdf = await pdfjsLib.getDocument({ data:rec.bytes.slice ? rec.bytes.slice() : new Uint8Array(rec.bytes), isEvalSupported:false }).promise;
-        const page = await pdf.getPage(1), vp1 = page.getViewport({ scale:1 }), vp = page.getViewport({ scale:260 / vp1.width });
+        const page = await pdf.getPage(clamp(pn, 1, pdf.numPages)), vp1 = page.getViewport({ scale:1 }), vp = page.getViewport({ scale:260 / vp1.width });
         const c = document.createElement("canvas"); c.width = Math.ceil(vp.width); c.height = Math.ceil(vp.height);
         const x = c.getContext("2d"); x.fillStyle = "#fff"; x.fillRect(0, 0, c.width, c.height);
         await page.render({ canvasContext:x, viewport:vp }).promise; pdf.destroy();
-        t = { k:"thumb:" + fp, src:c.toDataURL("image/jpeg", 0.7) }; await DB.put("meta", t);
+        t = { k:key, src:c.toDataURL("image/jpeg", 0.7) }; await DB.put("meta", t);
       }
-      img.src = t.src; img.closest(".rc").classList.add("has-thumb");
+      img.src = t.src;
     } catch (e){ console.warn("thumb", e); }
   }
   thumbBusy = false;
 }
-const FOLDER_SVG = '<svg viewBox="0 0 64 48" class="fold-ic" aria-hidden="true"><path d="M4 9a5 5 0 0 1 5-5h14l5 5h27a5 5 0 0 1 5 5v25a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5z" class="f1"/><path d="M4 16a5 5 0 0 1 5-5h46a5 5 0 0 1 5 5v23a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5z" class="f2"/></svg>';
+/* ---- covers: a chosen page, an own photo, or the first page ---- */
+function coverOf(r){ const d = (r && r.data) || {}; return !!((d.cover && d.cover.img) || (d.docs && d.docs[0] && d.docs[0].fp)); }
+function queueCover(r, img){
+  const d = r.data || {}, c = d.cover;
+  img.addEventListener("load", () => { const rc = img.closest(".rc"); if (rc) rc.classList.add("has-thumb"); }, { once:true });
+  if (c && c.img){ img.src = c.img; return; }
+  const docs = d.docs || []; if (!docs.length) return;
+  const fp = c && docs.some(x => x.fp === c.fp) ? c.fp : docs[0].fp;
+  thumbQ.push({ fp, page:c && c.fp === fp ? +c.page || 1 : 1, img });
+}
+const pinFirst = (a, b) => (b.data.pin ? 1 : 0) - (a.data.pin ? 1 : 0);
+function sortedIn(path){
+  const op = openedMap();
+  return (LIB.recs || []).filter(r => !r.data.trashed && (cleanPath(r.data.folder) === path || cleanPath(r.data.folder).startsWith(path + "/")))
+    .sort((a, b) => pinFirst(a, b) || (op[b.id] || b.updated) - (op[a.id] || a.updated));
+}
+/* reading progress: furthest page reached in each document */
+function progressOf(d){
+  let got = 0, all = 0;
+  for (const x of d.docs || []){ const r = d.read && d.read[x.fp]; if (r && r[1] > 0){ got += Math.min(r[0], r[1]); all += r[1]; } }
+  return all ? got / all : 0;
+}
+/* ---- folder art: soft filled folder (no outline), any colour, a sticker on it or instead of it, a peek of the first project ---- */
+const FOLDER_DEF = "#7fa89c";
+const STICKERS = [
+  ["Ders", "📚 📖 📝 ✏️ 🖊️ 📒 📓 🎓 🧮 📐 📏 🗂️ 🗃️ 📎 🖇️ 🔖"],
+  ["Bilim ve mühendislik", "🔬 🧪 ⚗️ 🧬 ⚙️ 🔧 🛠️ 🔩 🧲 ⚛️ 🔭 📡 💻 🖥️ 📊 📈"],
+  ["İşaretler", "⭐ 🌟 ❤️ 🔥 ✅ ❗ ❓ 💡 📌 🏷️ 🎯 🚀 🏆 💎 ⚡ 🔒"],
+  ["Doğa", "🌱 🌿 🍀 🌸 🌻 🌲 🌊 ☀️ 🌙 ❄️ 🌈 🍁 🐢 🦉 🐝 🦋"],
+  ["Diğer", "✈️ 🚲 🚗 🏛️ 🎨 🎵 🎬 📷 ☕ 🍕 🧳 🗺️ 🏠 💼 🧠 👋"]
+];
+function folderArt(look, peekImg){
+  const wrap = document.createElement("span"); wrap.className = "fold-art";
+  if (isHex(look.c)) wrap.style.setProperty("--fc", look.c); /* no colour chosen: follows the accent colour (CSS) */
+  const sticker = look.img || look.st;
+  if (look.pos === "full" && sticker){
+    /* the folder is replaced by the picture or the sticker; a small folder mark says it is still a folder */
+    wrap.classList.add("full");
+    if (look.img){ const im = document.createElement("img"); im.className = "fold-full-img"; im.alt = ""; im.src = look.img; wrap.appendChild(im); }
+    else { const e = document.createElement("span"); e.className = "fold-full-emo"; e.textContent = look.st; wrap.appendChild(e); }
+    const mark = document.createElement("span"); mark.className = "fold-mark"; mark.innerHTML = '<svg viewBox="0 0 24 24"><path d="M3 7.5A2.5 2.5 0 0 1 5.5 5h4l2 2h7A2.5 2.5 0 0 1 21 9.5v8a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 17.5z"/></svg>'; wrap.appendChild(mark);
+    return wrap;
+  }
+  wrap.insertAdjacentHTML("beforeend", '<svg class="fold-back" viewBox="0 0 100 80" aria-hidden="true"><path d="M5 13a6 6 0 0 1 6-6h21.5c1.9 0 3.6.9 4.8 2.3L42 15h47a6 6 0 0 1 6 6v46a6 6 0 0 1-6 6H11a6 6 0 0 1-6-6z"/></svg>');
+  const paper = document.createElement("span"); paper.className = "fold-paper"; wrap.appendChild(paper);
+  if (peekImg && look.peek !== false){ peekImg.className = "fold-peek"; peekImg.alt = ""; wrap.appendChild(peekImg); }
+  wrap.insertAdjacentHTML("beforeend", '<svg class="fold-front" viewBox="0 0 100 80" aria-hidden="true"><path d="M3 30a6 6 0 0 1 6-6h82a6 6 0 0 1 6 6v37a6 6 0 0 1-6 6H9a6 6 0 0 1-6-6z"/><path class="fold-shine" d="M9 26.5h82"/></svg>');
+  if (sticker){
+    const st = document.createElement("span"); st.className = "fold-st " + (look.pos === "center" ? "center" : "corner");
+    if (look.img){ const im = document.createElement("img"); im.alt = ""; im.src = look.img; st.appendChild(im); } else st.textContent = look.st;
+    wrap.appendChild(st);
+  }
+  return wrap;
+}
+/* ================= the app's own look: accent colour, interface font, density (v6.9.5) ================= */
+const SYS_F = '-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI Variable Text","Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif';
+const ACCENTS = [["#2f6b5e","Yosun"],["#2b5cab","Gece mavisi"],["#1f7a8c","Petrol"],["#6a4bb5","Mor"],["#b8467e","Gül"],["#9b2f45","Bordo"],["#c0612b","Kiremit"],["#8a6d1f","Hardal"],["#3f7d3a","Orman"],["#4a4a50","Grafit"]];
+const ACC_DEF = "#2f6b5e";
+const appLook = () => { const a = libState().app || {}; return { accent:isHex(a.accent) ? a.accent.toLowerCase() : "", font:FONT_IDS.has(a.font) ? a.font : "", density:a.density === "compact" ? "compact" : "" }; };
+function setAppLook(patch){ const st = libState(); const a = { ...appLook(), ...patch }; for (const k of Object.keys(a)) if (!a[k]) delete a[k]; st.app = { ...a, t:Date.now() }; libSave(st); applyAppLook(); }
+function applyAppLook(){
+  const a = appLook(); let css = "";
+  if (a.accent){
+    const P = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16)), lum = ([r, g, b]) => (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+    const light = a.accent, dark = mixHex(a.accent, "#ffffff", 0.42), L = P(light), D = P(dark);
+    const vars = (c, rgb, ink) => `--accent:${c};--accent-ink:${ink};--accent-soft:rgba(${rgb},.12);--sel:rgba(${rgb},.3)`;
+    const lv = vars(light, L.join(","), lum(L) > 0.6 ? "#111111" : "#ffffff"), dv = vars(dark, D.join(","), "#0c0c0e");
+    css += `:root{${lv}}:root[data-theme="sepia"]{${lv}}@media (prefers-color-scheme: dark){:root:not([data-theme="light"]):not([data-theme="sepia"]){${dv}}}:root[data-theme="dark"]{${dv}}`;
+  }
+  if (a.font) css += `:root{--f:'edf-${a.font}',${SYS_F};--f-d:'edf-${a.font}',${SYS_F}}`;
+  let tag = document.getElementById("userLook"); if (!tag){ tag = document.createElement("style"); tag.id = "userLook"; document.head.appendChild(tag); }
+  tag.textContent = css;
+  if (a.density) document.body.dataset.density = a.density; else delete document.body.dataset.density;
+}
+const appPop = document.createElement("div"); appPop.className = "pop app-pop"; appPop.hidden = true; appPop.setAttribute("role", "dialog"); appPop.setAttribute("aria-label", "Görünüm"); document.body.appendChild(appPop);
+function openAppLook(anchor){
+  const a = appLook(), re = () => openAppLook(anchor);
+  appPop.innerHTML = "";
+  const h = document.createElement("div"); h.className = "sh-h"; h.textContent = "Görünüm"; appPop.appendChild(h);
+  const sec = t => { const l = document.createElement("div"); l.className = "sh-l"; l.textContent = t; appPop.appendChild(l); const r = document.createElement("div"); r.className = "st-row"; appPop.appendChild(r); return r; };
+  const r1 = sec("Vurgu rengi"), cur = a.accent || ACC_DEF;
+  for (const [c, n] of ACCENTS){ const b = document.createElement("button"); b.className = "pal-sw acc-sw"; b.style.setProperty("--sw", c); b.title = n; b.setAttribute("aria-label", n); b.setAttribute("aria-pressed", String(cur === c)); b.onclick = () => { setAppLook({ accent:c === ACC_DEF ? "" : c }); re(); }; r1.appendChild(b); }
+  const more = document.createElement("button"); more.className = "pal-sw acc-sw pal-more"; more.title = "Başka renk"; more.setAttribute("aria-label", "Başka renk"); more.textContent = "+";
+  if (!ACCENTS.some(([c]) => c === cur)){ more.style.setProperty("--sw", cur); more.textContent = ""; more.setAttribute("aria-pressed", "true"); }
+  more.onclick = () => openPalette(more, { title:"Vurgu rengi", named:[{ k:ACC_DEF, hex:ACC_DEF, name:"Yosun (varsayılan)" }], more:ACCENT_MORE.filter(c => c !== "#1d1d1f"), current:cur, back:re, onPick:v => { setAppLook({ accent:v === ACC_DEF ? "" : v }); re(); } });
+  r1.appendChild(more);
+  const r2 = sec("Tema"); const sg = document.createElement("span"); sg.className = "seg3"; r2.appendChild(sg);
+  for (const [m, n] of [["", "Sistem"], ["night", "Koyu"], ["sepia", "Sepya"]]){ const b = document.createElement("button"); b.textContent = n; b.setAttribute("aria-pressed", String((S.readMode || "") === m)); b.onclick = () => { setReadMode(m); re(); }; sg.appendChild(b); }
+  const r3 = sec("Arayüz yazı tipi"); const fb = document.createElement("button"); fb.className = "font-pick"; fb.innerHTML = ICON.font; const fn = document.createElement("span"); fn.textContent = a.font ? fontName(a.font) : "Sistem"; if (a.font) fn.style.fontFamily = fontCss(a.font); fb.appendChild(fn);
+  fb.onclick = () => openFontPop(fb, a.font, id => { setAppLook({ font:id || "" }); re(); }); r3.appendChild(fb);
+  const r4 = sec("Yoğunluk"); const sd = document.createElement("span"); sd.className = "seg3"; r4.appendChild(sd);
+  for (const [k, n] of [["", "Ferah"], ["compact", "Sıkı"]]){ const b = document.createElement("button"); b.textContent = n; b.setAttribute("aria-pressed", String(a.density === k)); b.onclick = () => { setAppLook({ density:k }); re(); }; sd.appendChild(b); }
+  const note = document.createElement("p"); note.className = "sh-note"; note.textContent = "Renk ve yazı tipi OneDrive'a bağlı diğer cihazlarına da gelir."; appPop.appendChild(note);
+  openPop(appPop, document.contains(anchor) ? anchor : document.body);
+}
+/* ---- pictures chosen by the user are made small before they are stored (they travel with OneDrive too) ---- */
+function pickImageFile(){
+  return new Promise(res => { const inp = document.createElement("input"); inp.type = "file"; inp.accept = "image/*"; inp.onchange = () => res(inp.files[0] || null); inp.click(); });
+}
+async function shrinkImage(file, max, alpha){
+  const url = URL.createObjectURL(file);
+  try {
+    const im = new Image(); im.src = url; await im.decode();
+    const k = Math.min(1, max / Math.max(im.naturalWidth, im.naturalHeight)), c = document.createElement("canvas");
+    c.width = Math.max(1, Math.round(im.naturalWidth * k)); c.height = Math.max(1, Math.round(im.naturalHeight * k));
+    const x = c.getContext("2d"); if (!alpha){ x.fillStyle = "#fff"; x.fillRect(0, 0, c.width, c.height); } x.drawImage(im, 0, 0, c.width, c.height);
+    let out = c.toDataURL(alpha ? "image/webp" : "image/jpeg", 0.85);
+    if (alpha && !out.startsWith("data:image/webp")) out = c.toDataURL("image/png"); /* keeps the see-through parts of a sticker */
+    return out;
+  } finally { URL.revokeObjectURL(url); }
+}
+
+/* ---- folder look window ---- */
+const lookPop = document.createElement("div"); lookPop.className = "pop look-pop"; lookPop.hidden = true; lookPop.setAttribute("role", "dialog"); lookPop.setAttribute("aria-label", "Klasör görünümü"); document.body.appendChild(lookPop);
+const FOLDER_QUICK = ["#7fa89c","#6f9fd8","#9a86d6","#e08aa8","#e6a25a","#e3c45a","#78b67a","#9aa3ad","#3d4a5c"];
+function openFolderLook(path, anchor, tab){
+  const look = { ...folderLook(path) }; delete look.t;
+  const set = patch => { const n = { ...look, ...patch }; for (const k of Object.keys(n)) if (n[k] === undefined || n[k] === null || n[k] === "") delete n[k]; setFolderLook(path, n); renderHome(); openFolderLook(path, anchor, curTab); };
+  let curTab = tab || 0;
+  lookPop.innerHTML = "";
+  const h = document.createElement("div"); h.className = "sh-h"; h.textContent = baseOf(path); lookPop.appendChild(h);
+  /* preview */
+  const pv = document.createElement("div"); pv.className = "look-prev"; const first = sortedIn(path)[0], peek = first && coverOf(first) ? document.createElement("img") : null;
+  pv.appendChild(folderArt(look, peek)); if (peek) queueCover(first, peek); lookPop.appendChild(pv); pumpThumbs();
+  const sec = t => { const l = document.createElement("div"); l.className = "sh-l"; l.textContent = t; lookPop.appendChild(l); const r = document.createElement("div"); r.className = "st-row"; lookPop.appendChild(r); return r; };
+  /* colour */
+  const rc = sec("Renk");
+  { const b = document.createElement("button"); b.className = "pal-sw sm fold-def-sw"; b.title = "Vurgu rengine uysun"; b.setAttribute("aria-label", b.title); b.setAttribute("aria-pressed", String(!look.c)); b.onclick = () => set({ c:undefined }); rc.appendChild(b); }
+  for (const c of FOLDER_QUICK.slice(1)){ const b = document.createElement("button"); b.className = "pal-sw sm"; b.style.setProperty("--sw", c); b.title = c.toUpperCase(); b.setAttribute("aria-label", "Renk " + c); b.setAttribute("aria-pressed", String(look.c === c)); b.onclick = () => set({ c }); rc.appendChild(b); }
+  const more = document.createElement("button"); more.className = "pal-sw sm pal-more"; more.textContent = "+"; more.title = "Başka renk"; more.setAttribute("aria-label", "Başka renk");
+  if (look.c && !FOLDER_QUICK.slice(1).includes(look.c)){ more.style.setProperty("--sw", look.c); more.setAttribute("aria-pressed", "true"); more.textContent = ""; }
+  more.onclick = () => openPalette(more, { title:"Klasör rengi", named:[], more:[...FOLDER_QUICK.slice(1), ...ACCENT_MORE], current:look.c || "",
+    back:() => openFolderLook(path, anchor, curTab), onPick:v => set({ c:v }) });
+  rc.appendChild(more);
+  /* sticker */
+  { const l = document.createElement("div"); l.className = "sh-l"; l.textContent = "Çıkartma"; lookPop.appendChild(l); }
+  const tabs = document.createElement("div"); tabs.className = "look-tabs"; lookPop.appendChild(tabs);
+  const grid = document.createElement("div"); grid.className = "look-emo"; lookPop.appendChild(grid);
+  const fill = i => {
+    curTab = i; tabs.querySelectorAll("button").forEach((b, j) => b.setAttribute("aria-pressed", String(i === j))); grid.innerHTML = "";
+    for (const e of STICKERS[i][1].split(" ")){ const b = document.createElement("button"); b.textContent = e; b.setAttribute("aria-label", e); b.setAttribute("aria-pressed", String(!look.img && look.st === e)); b.onclick = () => set({ st:e, img:undefined, pos:look.pos || "corner" }); grid.appendChild(b); }
+  };
+  STICKERS.forEach(([name], i) => { const b = document.createElement("button"); b.textContent = name; b.onclick = () => fill(i); tabs.appendChild(b); });
+  fill(curTab);
+  const own = document.createElement("div"); own.className = "look-own";
+  const inp = document.createElement("input"); inp.type = "text"; inp.placeholder = "Kendi emojin"; inp.maxLength = 8; inp.setAttribute("aria-label", "Kendi emojin");
+  inp.onkeydown = e => { if (e.key === "Enter" && inp.value.trim()) set({ st:[...inp.value.trim()].slice(0, 3).join(""), img:undefined, pos:look.pos || "corner" }); };
+  const ok = document.createElement("button"); ok.className = "btn sm"; ok.textContent = "Ekle"; ok.onclick = () => { if (inp.value.trim()) set({ st:[...inp.value.trim()].slice(0, 3).join(""), img:undefined, pos:look.pos || "corner" }); };
+  const up = document.createElement("button"); up.className = "btn sm"; up.textContent = "Görsel yükle";
+  up.onclick = async () => { const f = await pickImageFile(); if (!f) return; try { set({ img:await shrinkImage(f, 420, true), st:undefined, pos:look.pos || "full" }); } catch { toast("Bu görsel açılamadı."); } };
+  own.append(inp, ok, up);
+  if (look.st || look.img){ const rm = document.createElement("button"); rm.className = "btn sm"; rm.textContent = "Kaldır"; rm.onclick = () => set({ st:undefined, img:undefined, pos:undefined }); own.appendChild(rm); }
+  lookPop.appendChild(own);
+  /* where the sticker sits */
+  if (look.st || look.img){
+    const rp = sec("Yerleşim"); const seg = document.createElement("span"); seg.className = "seg3"; rp.appendChild(seg);
+    for (const [k, n] of [["corner", "Köşede"], ["center", "Ortada"], ["full", "Klasörün yerine"]]){ const b = document.createElement("button"); b.textContent = n; b.setAttribute("aria-pressed", String((look.pos || "corner") === k)); b.onclick = () => set({ pos:k }); seg.appendChild(b); }
+  }
+  /* peek of the first project */
+  if (look.pos !== "full" || !(look.st || look.img)){
+    const rk = sec(""); rk.previousSibling.remove();
+    const lab = document.createElement("label"); lab.className = "look-chk"; const cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = look.peek !== false;
+    cb.onchange = () => set({ peek:cb.checked ? undefined : false }); lab.append(cb, document.createTextNode(" İçindeki projenin kapağı görünsün")); rk.appendChild(lab);
+  }
+  const rs = document.createElement("button"); rs.className = "link look-reset"; rs.textContent = "Varsayılana dön"; rs.onclick = () => { setFolderLook(path, {}); renderHome(); openFolderLook(path, anchor, curTab); };
+  lookPop.appendChild(rs);
+  openPop(lookPop, document.contains(anchor) ? anchor : $("#recent"));
+}
+
+/* ---- cover picker for a project: any page of its documents, or an own photo ---- */
+const coverPop = document.createElement("div"); coverPop.className = "pop cover-pop"; coverPop.hidden = true; coverPop.setAttribute("role", "dialog"); coverPop.setAttribute("aria-label", "Kapak seç"); document.body.appendChild(coverPop);
+let coverGen = 0;
+async function openCoverPick(r, anchor, docIdx = 0, upto = 24){
+  const d = r.data, docs = d.docs || [], gen = ++coverGen;
+  coverPop.innerHTML = "";
+  const h = document.createElement("div"); h.className = "sh-h"; h.textContent = "Kapak"; coverPop.appendChild(h);
+  const top = document.createElement("div"); top.className = "cover-top";
+  const def = document.createElement("button"); def.className = "btn sm"; def.textContent = "İlk sayfa"; def.onclick = async () => { closePop(); await updateRec(r.id, x => { delete x.cover; }); renderHome(); };
+  const ph = document.createElement("button"); ph.className = "btn sm"; ph.textContent = "Fotoğraf yükle";
+  ph.onclick = async () => { const f = await pickImageFile(); if (!f) return; try { const img = await shrinkImage(f, 520, false); closePop(); await updateRec(r.id, x => { x.cover = { img }; }); renderHome(); } catch { toast("Bu görsel açılamadı."); } };
+  top.append(def, ph);
+  if (docs.length > 1){ const sel = document.createElement("select"); sel.className = "cover-doc"; docs.forEach((x, i) => { const o = document.createElement("option"); o.value = i; o.textContent = stripPdf(x.name); sel.appendChild(o); }); sel.value = docIdx; sel.onchange = () => openCoverPick(r, anchor, +sel.value); top.appendChild(sel); }
+  coverPop.appendChild(top);
+  const grid = document.createElement("div"); grid.className = "cover-grid"; coverPop.appendChild(grid);
+  openPop(coverPop, document.contains(anchor) ? anchor : $("#recent"));
+  const doc = docs[docIdx]; if (!doc) return;
+  const rec = await DB.get("pdfs", doc.fp).catch(() => null); if (!rec){ grid.textContent = "Bu belge bu cihazda yok."; return; }
+  const pdf = await pdfjsLib.getDocument({ data:rec.bytes.slice ? rec.bytes.slice() : new Uint8Array(rec.bytes), isEvalSupported:false }).promise;
+  const n = Math.min(pdf.numPages, upto), cur = d.cover && d.cover.fp === doc.fp ? +d.cover.page || 1 : !d.cover && docIdx === 0 ? 1 : 0;
+  const cells = [];
+  for (let i = 1; i <= n; i++){ const b = document.createElement("button"); b.className = "cover-cell"; b.setAttribute("aria-pressed", String(i === cur)); b.title = "Sayfa " + i;
+    const c = document.createElement("canvas"); const lab = document.createElement("span"); lab.textContent = i; b.append(c, lab);
+    b.onclick = async () => { closePop(); await updateRec(r.id, x => { if (docIdx === 0 && i === 1) delete x.cover; else x.cover = { fp:doc.fp, page:i }; }); renderHome(); };
+    grid.appendChild(b); cells.push(c); }
+  if (pdf.numPages > n){ const m = document.createElement("button"); m.className = "btn sm cover-more"; m.textContent = `Daha fazla sayfa (${pdf.numPages - n})`; m.onclick = () => { pdf.destroy(); openCoverPick(r, anchor, docIdx, upto + 48); }; coverPop.appendChild(m); }
+  for (let i = 0; i < cells.length; i++){
+    if (gen !== coverGen || coverPop.hidden) break;
+    try { const pg = await pdf.getPage(i + 1), v1 = pg.getViewport({ scale:1 }), vp = pg.getViewport({ scale:120 / v1.width }), c = cells[i];
+      c.width = Math.ceil(vp.width); c.height = Math.ceil(vp.height); const x = c.getContext("2d"); x.fillStyle = "#fff"; x.fillRect(0, 0, c.width, c.height);
+      await pg.render({ canvasContext:x, viewport:vp }).promise; } catch {}
+  }
+  if (gen === coverGen) try { pdf.destroy(); } catch {}
+}
 function libMenu(anchor, items){
   const m = $("#libMenu"); m.innerHTML = "";
   for (const it of items){
@@ -2787,14 +3979,14 @@ async function renameFolder(path){
     const np = cleanPath((parentOf(path) ? parentOf(path) + "/" : "") + n); if (!np || np === path) return;
     const swap = f => f === path ? np : f.startsWith(path + "/") ? np + f.slice(path.length) : f;
     for (const r of LIB.recs){ const f = cleanPath(r.data.folder); if (f && (f === path || f.startsWith(path + "/"))) await updateRec(r.id, d => { d.folder = swap(f); }); }
-    saveFolders(savedFolders().map(swap)); if (LIB.path === path || LIB.path.startsWith(path + "/")) LIB.path = swap(LIB.path); renderHome();
+    saveFolders(savedFolders().map(swap)); moveFolderLooks(path, np); if (LIB.path === path || LIB.path.startsWith(path + "/")) LIB.path = swap(LIB.path); renderHome();
   });
 }
 async function deleteFolder(path){
   const inside = LIB.recs.filter(r => { const f = cleanPath(r.data.folder); return !r.data.trashed && f && (f === path || f.startsWith(path + "/")); });
   if (inside.length && !confirm(`"${baseOf(path)}" klasöründeki ${inside.length} proje çöp kutusuna atılacak (30 gün içinde geri alınabilir). Devam edilsin mi?`)) return;
   for (const r of inside) await updateRec(r.id, d => { d.trashed = Date.now(); delete d.folder; });
-  saveFolders(savedFolders().filter(f => f !== path && !f.startsWith(path + "/")));
+  saveFolders(savedFolders().filter(f => f !== path && !f.startsWith(path + "/"))); moveFolderLooks(path, null);
   if (LIB.path === path || LIB.path.startsWith(path + "/")) LIB.path = parentOf(path);
   toast(inside.length ? "Klasör silindi, projeler çöp kutusunda" : "Klasör silindi"); renderHome();
 }
@@ -2804,10 +3996,16 @@ function projTile(r, opts = {}){
   const th = document.createElement("span"); th.className = "thumb"; const img = document.createElement("img"); img.alt = ""; th.appendChild(img);
   const ph = document.createElement("span"); ph.className = "thumb-ph"; ph.innerHTML = '<svg viewBox="0 0 24 24"><path d="M7 3.5h7l4 4V20a.5.5 0 0 1-.5.5h-10A.5.5 0 0 1 7 20z"/><path d="M14 3.5V8h4"/></svg>'; th.appendChild(ph);
   const nm = document.createElement("span"); nm.className = "rc-name"; nm.textContent = r.name;
+  /* label colour, star, pin, reading progress */
+  if (isHex(d.label)){ li.style.setProperty("--lc", d.label); li.classList.add("labeled"); const rb = document.createElement("span"); rb.className = "rc-label"; th.appendChild(rb); }
+  if (d.star){ const sb = document.createElement("span"); sb.className = "rc-star"; sb.title = "Yıldızlı"; sb.textContent = "★"; th.appendChild(sb); }
+  if (d.pin){ const pn = document.createElement("span"); pn.className = "rc-pin"; pn.title = "En üste sabitlendi"; pn.innerHTML = '<svg viewBox="0 0 24 24"><path d="M9 4h6l-1 6 3 3v1.5H7V13l3-3z"/><path d="M12 14.5V20"/></svg>'; nm.prepend(pn); }
+  const prog = progressOf(d);
+  if (prog > 0){ const pb = document.createElement("span"); pb.className = "rc-prog"; pb.title = `%${Math.round(prog * 100)} okundu`; const f = document.createElement("i"); f.style.width = Math.max(4, Math.round(prog * 100)) + "%"; pb.appendChild(f); th.appendChild(pb); }
   const it = d.items || [], ex = it.filter(i => i.type !== "note").length, nt = it.filter(i => i.type === "note").length, nd = (d.docs || []).length;
   const op = openedMap()[r.id];
   const parts = [d.trashed ? `${Math.max(0, TRASH_DAYS - Math.floor((Date.now() - d.trashed) / 864e5))} gün sonra silinecek` : LIB.sort === "updated" || !op ? ago(r.updated) : ago(op)];
-  if (nd > 1) parts.push(nd + " belge"); if (ex) parts.push(ex + " alıntı"); if (nt) parts.push(nt + " not");
+  if (nd > 1) parts.push(nd + " belge"); if (ex) parts.push(ex + " alıntı"); if (nt) parts.push(nt + " not"); if (prog >= 0.995) parts.push("bitti"); else if (prog > 0) parts.push(`%${Math.round(prog * 100)}`);
   if (opts.showPath && d.folder) parts.push(d.folder.replace(/\//g, " › "));
   const mt = document.createElement("span"); mt.className = "rc-meta"; mt.textContent = parts.join(" · ");
   main.append(th, nm, mt);
@@ -2824,6 +4022,13 @@ function projTile(r, opts = {}){
       { label:"Aç", fn:() => openProject(d) },
       { label:"Yeniden adlandır", fn:() => askText("Projenin yeni adı", r.name, async n => { await updateRec(r.id, x => { x.name = n; }); renderHome(); }) },
       { label:"Taşı…", fn:() => moveMenu(mb, r) },
+      "-",
+      { label:d.star ? "Yıldızı kaldır" : "Yıldızla", fn:async () => { await updateRec(r.id, x => { if (x.star) delete x.star; else x.star = true; }); renderHome(); } },
+      { label:d.pin ? "Sabitlemeyi kaldır" : "En üste sabitle", fn:async () => { await updateRec(r.id, x => { if (x.pin) delete x.pin; else x.pin = true; }); renderHome(); } },
+      { label:"Renk etiketi…", fn:() => openPalette(mb, { title:"Renk etiketi", named:[{ k:"none", hex:"#ffffff", name:"Etiket yok" }], more:LABEL_COLORS, current:d.label || "none",
+        onPick:async v => { closePop(); await updateRec(r.id, x => { if (isHex(v)) x.label = v; else delete x.label; }); renderHome(); } }) },
+      { label:"Kapak seç…", fn:() => openCoverPick(r, mb) },
+      "-",
       { label:"Dışa aktar (.ednote)", fn:() => exportZip(r.id) },
       "-",
       { label:"Çöp kutusuna at", danger:true, fn:() => trashProject(r.id) }
@@ -2834,7 +4039,7 @@ function projTile(r, opts = {}){
     li.addEventListener("dragend", () => li.classList.remove("dragging"));
   }
   li.append(main, acts);
-  const fp = d.docs && d.docs[0] && d.docs[0].fp; if (fp){ thumbQ.push({ fp, img }); }
+  if (coverOf(r)) queueCover(r, img);
   return li;
 }
 function dropTarget(node, folder){
@@ -2845,15 +4050,141 @@ function dropTarget(node, folder){
 function folderTile(path, count){
   const li = document.createElement("li"); li.className = "rc fold"; li.dataset.folder = path;
   const main = document.createElement("button"); main.className = "rc-main";
-  const th = document.createElement("span"); th.className = "thumb fold-th"; th.innerHTML = FOLDER_SVG;
+  const th = document.createElement("span"); th.className = "thumb fold-th";
+  const look = folderLook(path), first = sortedIn(path)[0], fp = first && coverOf(first);
+  const peek = fp ? document.createElement("img") : null; th.appendChild(folderArt(look, peek));
+  if (peek) queueCover(first, peek);
   const nm = document.createElement("span"); nm.className = "rc-name"; nm.textContent = baseOf(path);
   const mt = document.createElement("span"); mt.className = "rc-meta"; mt.textContent = count ? count + " proje" : "Boş";
   main.append(th, nm, mt); main.onclick = () => { LIB.path = path; LIB.q = ""; $("#libQ").value = ""; renderHome(); };
   const acts = document.createElement("div"); acts.className = "rc-acts";
   const mb = document.createElement("button"); mb.className = "icon-btn sm rc-more"; mb.title = "Seçenekler"; mb.setAttribute("aria-label", "Seçenekler"); mb.innerHTML = '<svg viewBox="0 0 24 24"><circle cx="6" cy="12" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="18" cy="12" r="1.4"/></svg>';
-  mb.onclick = () => libMenu(mb, [{ label:"Aç", fn:() => main.click() }, { label:"Yeniden adlandır", fn:() => renameFolder(path) }, "-", { label:"Klasörü sil", danger:true, fn:() => deleteFolder(path) }]);
+  mb.onclick = () => libMenu(mb, [{ label:"Aç", fn:() => main.click() }, { label:"Görünüm…", fn:() => openFolderLook(path, mb) }, { label:"Yeniden adlandır", fn:() => renameFolder(path) }, "-", { label:"Klasörü sil", danger:true, fn:() => deleteFolder(path) }]);
+  th.addEventListener("contextmenu", e => { e.preventDefault(); openFolderLook(path, th); });
   acts.appendChild(mb); li.append(main, acts); dropTarget(li, path);
   return li;
+}
+/* ================= visual overview (v6.9.9) =================
+   1. density strip on the right edge of each PDF: where the excerpts, notes, comments and ink are
+   2. minimap of the desk
+   3. reading log per device and day, merged across devices through library.json; shown on the library's "Okuma" page */
+let densT = 0;
+function densSoon(){ clearTimeout(densT); densT = setTimeout(() => { S.viewers.forEach(v => { if (!v.root.hidden) renderDensity(v); }); if (MINI.on) renderMini(); }, 250); }
+addEventListener("resize", () => densSoon());
+function pageMarks(fp){
+  const m = {}, at = n => m[n] || (m[n] = { ex:0, im:0, cm:0, ink:0, hl:0 });
+  if (!S.proj) return m;
+  for (const it of S.proj.items){ if (it.doc === fp && it.page){ if (it.type === "excerpt") at(it.page).ex++; else if (it.type === "image") at(it.page).im++; } }
+  for (const c of S.proj.comments) if (c.doc === fp) at(c.page).cm++;
+  for (const st of S.proj.ink) if (st.where === "pdf" && st.doc === fp){ if (st.kind === "hl") at(st.page).hl++; else at(st.page).ink++; }
+  return m;
+}
+function renderDensity(v){
+  const d = v.dens; if (!d) return; d.innerHTML = "";
+  if (!v.pdf || !v.pages.length || S.densOff){ d.hidden = true; return; }
+  const marks = pageMarks(v.fp), keys = Object.keys(marks); d.hidden = !keys.length; if (!keys.length) return;
+  const H = v.pagesEl.scrollHeight || 1, top = v.pane.offsetTop, h = v.pane.clientHeight, sb = v.pane.offsetWidth - v.pane.clientWidth;
+  d.style.top = top + "px"; d.style.height = h + "px"; d.style.right = sb + "px";
+  let mx = 1; for (const k of keys){ const q = marks[k]; mx = Math.max(mx, q.ex + q.im + q.cm + Math.ceil(q.ink / 4) + Math.ceil(q.hl / 2)); }
+  for (const k of keys){
+    const p = v.pages[+k - 1]; if (!p) continue; const q = marks[k], tot = q.ex + q.im + q.cm + Math.ceil(q.ink / 4) + Math.ceil(q.hl / 2);
+    const b = document.createElement("button"); b.className = "dmark " + (q.ex + q.im ? "dx" : q.cm ? "dc" : q.hl ? "dh" : "di");
+    b.style.top = (p.div.offsetTop / H * 100) + "%"; b.style.height = `max(3px, ${p.div.offsetHeight / H * 100 * 0.8}%)`; b.style.width = (4 + 6 * tot / mx) + "px";
+    const t = []; if (q.ex) t.push(q.ex + " alıntı"); if (q.im) t.push(q.im + " görsel"); if (q.cm) t.push(q.cm + " yorum"); if (q.hl) t.push(q.hl + " vurgu"); if (q.ink) t.push(q.ink + " çizim");
+    b.title = `Sayfa ${k}: ${t.join(", ")}`; b.setAttribute("aria-label", b.title);
+    b.onclick = () => { v.pane.scrollTo({ top:p.div.offsetTop - 12, behavior:"smooth" }); };
+    d.appendChild(b);
+  }
+}
+
+/* ---- minimap ---- */
+const MINI = { on: ls.get("ednote:mini") === "1" };
+function renderMini(){
+  let m = $("#miniMap");
+  if (!MINI.on || !S.proj){ if (m) m.hidden = true; return; }
+  if (!m){
+    m = document.createElement("canvas"); m.id = "miniMap"; m.className = "minimap"; m.title = "Mini harita: dokun ya da sürükle"; el.ws.appendChild(m);
+    const go = e => { const k = MINI.k; if (!k) return; const r = m.getBoundingClientRect(), wx = MINI.x0 + (e.clientX - r.left) / k, wy = MINI.y0 + (e.clientY - r.top) / k, vw = view(), wr = el.ws.getBoundingClientRect();
+      vw.tx = wr.width / 2 - wx * vw.s; vw.ty = wr.height / 2 - wy * vw.s; applyView(); };
+    m.addEventListener("pointerdown", e => { e.preventDefault(); e.stopPropagation(); m.setPointerCapture && m.setPointerCapture(e.pointerId); MINI.drag = true; go(e); });
+    m.addEventListener("pointermove", e => { if (MINI.drag){ e.stopPropagation(); go(e); } });
+    const end = () => { MINI.drag = false; save(); }; m.addEventListener("pointerup", end); m.addEventListener("pointercancel", end);
+    m.addEventListener("wheel", e => e.stopPropagation(), { passive:true });
+  }
+  m.hidden = false; cancelAnimationFrame(MINI.raf); MINI.raf = requestAnimationFrame(drawMini);
+}
+function drawMini(){
+  const m = $("#miniMap"); if (!m || m.hidden) return;
+  const wr = el.ws.getBoundingClientRect(), vw = view(), cards = [...el.plane.querySelectorAll(".card")];
+  const vx1 = -vw.tx / vw.s, vy1 = -vw.ty / vw.s, vx2 = vx1 + wr.width / vw.s, vy2 = vy1 + wr.height / vw.s;
+  let x1 = vx1, y1 = vy1, x2 = vx2, y2 = vy2; const R = [];
+  for (const c of cards){ const r = { x:c.offsetLeft, y:c.offsetTop, w:c.offsetWidth, h:c.offsetHeight, col:getComputedStyle(c).borderTopColor }; R.push(r); x1 = Math.min(x1, r.x); y1 = Math.min(y1, r.y); x2 = Math.max(x2, r.x + r.w); y2 = Math.max(y2, r.y + r.h); }
+  const pad = 40; x1 -= pad; y1 -= pad; x2 += pad; y2 += pad;
+  const W = Math.min(190, wr.width * 0.34), k = Math.min(W / (x2 - x1), W * 0.8 / (y2 - y1)), cw = Math.round((x2 - x1) * k), ch = Math.round((y2 - y1) * k), dpr = devicePixelRatio || 1;
+  m.style.width = cw + "px"; m.style.height = ch + "px"; m.width = cw * dpr; m.height = ch * dpr;
+  Object.assign(MINI, { k, x0:x1, y0:y1 });
+  const g = m.getContext("2d"); g.scale(dpr, dpr); g.clearRect(0, 0, cw, ch);
+  for (const r of R){ g.fillStyle = r.col; g.globalAlpha = .75; g.fillRect((r.x - x1) * k, (r.y - y1) * k, Math.max(2, r.w * k), Math.max(2, r.h * k)); }
+  g.globalAlpha = 1; const acc = getComputedStyle(document.body).getPropertyValue("--accent").trim() || "#2f6fde";
+  g.strokeStyle = acc; g.lineWidth = 1.5; g.fillStyle = acc; g.globalAlpha = .1; g.fillRect((vx1 - x1) * k, (vy1 - y1) * k, (vx2 - vx1) * k, (vy2 - vy1) * k);
+  g.globalAlpha = 1; g.strokeRect((vx1 - x1) * k + .75, (vy1 - y1) * k + .75, (vx2 - vx1) * k - 1.5, (vy2 - vy1) * k - 1.5);
+}
+function toggleMini(on){ MINI.on = on ?? !MINI.on; ls.set("ednote:mini", MINI.on ? "1" : "0"); renderMini(); const b = $("#bMini"); if (b) b.setAttribute("aria-pressed", String(MINI.on)); }
+
+/* ---- reading log: pages looked at and minutes spent, per device and day ---- */
+const DEV_ID = (() => { let d = ls.get("ednote:devId"); if (!d){ d = Math.random().toString(36).slice(2, 10); ls.set("ednote:devId", d); } return d; })();
+const dayKey = (t = new Date()) => `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, "0")}-${String(t.getDate()).padStart(2, "0")}`;
+const READ = { seen:new Set(), day:"", p:0, m:0, dirty:false, t:0, act:Date.now() };
+function readLoad(){ const d = dayKey(); if (READ.day === d) return; if (READ.dirty) readFlush(); READ.day = d; READ.seen = new Set(); const r = (libState().reads || {})[DEV_ID + "|" + d]; READ.p = r ? +r.p || 0 : 0; READ.m = r ? +r.m || 0 : 0; }
+function readTick(fp, n){ readLoad(); const k = fp + ":" + n; if (READ.seen.has(k)) return; READ.seen.add(k); READ.p++; readDirty(); }
+function readDirty(){ READ.dirty = true; if (!READ.t) READ.t = setTimeout(readFlush, 60000); }
+function readFlush(){
+  clearTimeout(READ.t); READ.t = 0; if (!READ.dirty || !READ.day) return; READ.dirty = false;
+  const st = libState(); st.reads = st.reads || {}; st.reads[DEV_ID + "|" + READ.day] = { p:READ.p, m:Math.round(READ.m * 10) / 10, t:Date.now() }; libSave(st);
+}
+["pointerdown", "keydown", "wheel"].forEach(t => document.addEventListener(t, () => { READ.act = Date.now(); }, { capture:true, passive:true }));
+document.addEventListener("scroll", () => { READ.act = Date.now(); }, { capture:true, passive:true });
+setInterval(() => { if (S.proj && !S.sample && !document.hidden && $("#home").hidden && Date.now() - READ.act < 120000){ readLoad(); READ.m += 0.5; readDirty(); } }, 30000);
+document.addEventListener("visibilitychange", () => { if (document.hidden) readFlush(); });
+addEventListener("pagehide", readFlush);
+function readDays(){ const out = {}; for (const [k, r] of Object.entries(libState().reads || {})){ if (!r || r.del) continue; const d = k.split("|")[1]; if (!d) continue; const o = out[d] || (out[d] = { p:0, m:0 }); o.p += +r.p || 0; o.m += +r.m || 0; }
+  if (READ.day){ const mine = (libState().reads || {})[DEV_ID + "|" + READ.day], o = out[READ.day] || (out[READ.day] = { p:0, m:0 }); o.p += READ.p - (mine ? +mine.p || 0 : 0); o.m += READ.m - (mine ? +mine.m || 0 : 0); }
+  return out; }
+function renderStats(box){
+  const days = readDays(), today = new Date(); today.setHours(12, 0, 0, 0);
+  const at = i => { const t = new Date(today); t.setDate(t.getDate() - i); return t; };
+  let week = 0, weekM = 0, month = 0, streak = 0;
+  for (let i = 0; i < 7; i++){ const d = days[dayKey(at(i))]; if (d){ week += d.p; weekM += d.m; } }
+  for (let i = 0; i < 30; i++){ const d = days[dayKey(at(i))]; if (d) month += d.p; }
+  for (let i = days[dayKey(at(0))] ? 0 : 1; i < 800; i++){ if (days[dayKey(at(i))] && days[dayKey(at(i))].p > 0) streak++; else break; }
+  const tday = days[dayKey(at(0))] || { p:0, m:0 }, fmtM = m => m >= 60 ? `${Math.floor(m / 60)} sa ${Math.round(m % 60)} dk` : `${Math.round(m)} dk`;
+  /* heatmap: 26 weeks, Monday on top */
+  const WEEKS = 26, dow = (today.getDay() + 6) % 7, startBack = WEEKS * 7 - 7 + dow;
+  let mxp = 1; for (let i = 0; i <= startBack; i++){ const d = days[dayKey(at(i))]; if (d) mxp = Math.max(mxp, d.p); }
+  let cells = "", months = "", lastM = -1; const MN = ["Oca", "Şub", "Mar", "Nis", "May", "Haz", "Tem", "Ağu", "Eyl", "Eki", "Kas", "Ara"];
+  for (let w = 0; w < WEEKS; w++){
+    const first = at(startBack - w * 7); if (first.getMonth() !== lastM){ lastM = first.getMonth(); if (w < WEEKS - 2 && (w > 0 || first.getDate() <= 10)) months += `<span style="grid-column:${w + 1} / span 3">${MN[lastM]}</span>`; }
+    for (let r = 0; r < 7; r++){ const i = startBack - w * 7 - r; if (i < 0) continue; const t = at(i), d = days[dayKey(t)], lv = !d || !d.p ? 0 : Math.min(4, 1 + Math.floor(3.999 * d.p / mxp));
+      cells += `<i class="hm l${lv}" style="grid-column:${w + 1};grid-row:${r + 1}" title="${t.toLocaleDateString("tr", { day:"numeric", month:"long", weekday:"short" })}: ${d ? d.p : 0} sayfa${d && d.m ? ", " + fmtM(d.m) : ""}"></i>`; }
+  }
+  /* progress per project */
+  const live = (LIB.recs || []).filter(r => !r.data.trashed), op = openedMap();
+  const rows = live.map(r => { let a = 0, b = 0; for (const x of Object.values(r.data.read || {})){ if (Array.isArray(x)){ a += +x[0] || 0; b += +x[1] || 0; } } const it = r.data.items || [];
+    return { r, pct:b ? Math.round(a / b * 100) : 0, a, b, ex:it.filter(i => i.type === "excerpt").length, no:it.filter(i => i.type === "note").length, t:op[r.id] || r.updated || 0 }; })
+    .filter(x => x.b).sort((p, q) => q.t - p.t).slice(0, 12);
+  const totEx = live.reduce((s, r) => s + (r.data.items || []).filter(i => i.type === "excerpt").length, 0), totNo = live.reduce((s, r) => s + (r.data.items || []).filter(i => i.type === "note").length, 0);
+  box.innerHTML = `<div class="st-tiles">
+    <div class="st-tile"><b>${tday.p}</b><span>bugün sayfa</span><small>${fmtM(tday.m)}</small></div>
+    <div class="st-tile"><b>${week}</b><span>bu hafta sayfa</span><small>${fmtM(weekM)}</small></div>
+    <div class="st-tile"><b>${streak}</b><span>gün üst üste</span><small>son 30 gün: ${month} sayfa</small></div>
+    <div class="st-tile"><b>${totEx}</b><span>alıntı</span><small>${totNo} not, ${live.length} proje</small></div></div>
+    <h3 class="st-h">Son 6 ay</h3>
+    <div class="st-heat"><div class="hm-days"><span>Pzt</span><span></span><span>Çar</span><span></span><span>Cum</span><span></span><span></span></div><div><div class="hm-months">${months}</div><div class="hm-grid">${cells}</div></div></div>
+    <div class="hm-key">Az <i class="hm l0"></i><i class="hm l1"></i><i class="hm l2"></i><i class="hm l3"></i><i class="hm l4"></i> Çok</div>
+    <h3 class="st-h">Projelerde ilerleme</h3>
+    <ul class="st-prog">${rows.map(x => `<li data-id="${x.r.id}"><span class="sp-name">${x.r.name.replace(/[&<>"]/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;" })[c])}</span><span class="sp-bar"><i style="width:${x.pct}%"></i></span><span class="sp-pct">%${x.pct}</span><span class="sp-meta">${x.a}/${x.b} sayfa · ${x.ex} alıntı · ${x.no} not</span></li>`).join("") || '<li class="quiet">Henüz okunmuş sayfa yok.</li>'}</ul>
+    <p class="quiet st-foot">Sayfa sayısı: o gün göz attığın farklı sayfalar. Süre: uygulama açıkken ve sen bir şey yaparken geçen zaman. Tüm cihazların toplamıdır; OneDrive bağlıysa birleşir.</p>`;
+  box.querySelectorAll(".st-prog li[data-id]").forEach(li => li.onclick = () => { const r = live.find(x => x.id === li.dataset.id); if (r) openProject(r.data); });
 }
 async function renderHome(){
   let recs = []; try { recs = await DB.all("projects"); } catch {}
@@ -2867,19 +4198,21 @@ async function renderHome(){
   const folders = allFolders(recs); if (LIB.path && !folders.includes(LIB.path)) LIB.path = "";
   const q = LIB.q.trim().toLocaleLowerCase("tr").replace(/ı/g, "i");
   const byName = (a, b) => a.name.localeCompare(b.name, "tr"), byTime = (a, b) => LIB.sort === "updated" ? b.updated - a.updated : (op[b.id] || b.updated) - (op[a.id] || a.updated);
-  const sortP = a => a.sort(LIB.sort === "name" ? byName : byTime);
+  const sortP = a => a.sort((x, y) => pinFirst(x, y) || (LIB.sort === "name" ? byName : byTime)(x, y));
   /* top bar */
   const crumb = $("#libCrumb"); crumb.innerHTML = "";
   const addCrumb = (label, path, last) => { const b = document.createElement(last ? "span" : "button"); b.className = "crumb" + (last ? " cur" : ""); b.textContent = label; if (!last){ b.onclick = () => { LIB.path = path; renderHome(); }; dropTarget(b, path); } crumb.appendChild(b); if (!last){ const s = document.createElement("span"); s.className = "crumb-sep"; s.textContent = "›"; crumb.appendChild(s); } };
   if (LIB.view === "proj"){
     const segs = LIB.path ? LIB.path.split("/") : [];
     addCrumb("Projelerim", "", !segs.length); segs.forEach((sg, i) => addCrumb(sg, segs.slice(0, i + 1).join("/"), i === segs.length - 1));
-  } else addCrumb(LIB.view === "recent" ? "Son açılanlar" : "Çöp kutusu", "", true);
+  } else addCrumb(LIB.view === "stats" ? "Okuma" : LIB.view === "recent" ? "Son açılanlar" : LIB.view === "star" ? "Yıldızlı" : "Çöp kutusu", "", true);
   $("#libUp").hidden = !(LIB.view === "proj" && LIB.path && !q);
   $("#libNewFolder").hidden = LIB.view !== "proj"; $("#libEmptyTrash").hidden = !(LIB.view === "trash" && trash.length);
   $("#libSort").value = LIB.sort; $("#libSort").hidden = LIB.view === "trash";
   el.recent.classList.toggle("list", LIB.list);
   const note = $("#libNote"); note.hidden = true;
+  const stb = $("#libStats"), statsV = LIB.view === "stats" && !q; stb.hidden = !statsV; el.recent.hidden = statsV; $("#libSort").hidden = $("#libSort").hidden || statsV; $("#libView").hidden = statsV;
+  if (statsV){ readFlush(); renderStats(stb); $("#recentEmpty").hidden = true; return; }
   /* items */
   el.recent.innerHTML = ""; let count = 0;
   const add = n => { el.recent.appendChild(n); count++; };
@@ -2889,6 +4222,8 @@ async function renderHome(){
   } else if (q){
     for (const f of folders.filter(f => f.toLocaleLowerCase("tr").replace(/ı/g, "i").includes(q))) add(folderTile(f, live.filter(r => cleanPath(r.data.folder) === f).length));
     for (const r of sortP(live.filter(r => r.name.toLocaleLowerCase("tr").replace(/ı/g, "i").includes(q) || (r.data.docs || []).some(d => (d.name || "").toLocaleLowerCase("tr").replace(/ı/g, "i").includes(q))))) add(projTile(r, { showPath:true }));
+  } else if (LIB.view === "star"){
+    for (const r of sortP(live.filter(r => r.data.star))) add(projTile(r, { showPath:true }));
   } else if (LIB.view === "recent"){
     for (const r of live.filter(r => op[r.id]).sort((a, b) => op[b.id] - op[a.id]).slice(0, 24)) add(projTile(r, { showPath:true }));
   } else {
@@ -2896,12 +4231,12 @@ async function renderHome(){
     for (const r of sortP(live.filter(r => cleanPath(r.data.folder) === LIB.path))) add(projTile(r));
   }
   const empty = $("#recentEmpty"); empty.hidden = count > 0;
-  if (!count) empty.innerHTML = q ? "Aramayla eşleşen proje yok." : LIB.view === "trash" ? "Çöp kutusu boş." : LIB.view === "recent" ? "Henüz açılmış proje yok." : LIB.path ? "Bu klasör boş. Projeleri buraya ⋯ menüsündeki <b>Taşı</b> ile ya da sürükleyerek getirebilirsin." : "Henüz bir proje yok. <b>PDF aç</b> ile başla; birden fazla PDF seçersen hepsi aynı projeye girer.";
+  if (!count) empty.innerHTML = q ? "Aramayla eşleşen proje yok." : LIB.view === "trash" ? "Çöp kutusu boş." : LIB.view === "recent" ? "Henüz açılmış proje yok." : LIB.view === "star" ? "Yıldızlı proje yok. Bir projenin ⋯ menüsünden <b>Yıldızla</b>." : LIB.path ? "Bu klasör boş. Projeleri buraya ⋯ menüsündeki <b>Taşı</b> ile ya da sürükleyerek getirebilirsin." : "Henüz bir proje yok. <b>PDF aç</b> ile başla; birden fazla PDF seçersen hepsi aynı projeye girer.";
   pumpThumbs();
 }
 document.querySelectorAll(".lib-nav button").forEach(b => b.onclick = () => { LIB.view = b.dataset.v; LIB.q = ""; $("#libQ").value = ""; renderHome(); });
 $("#libUp").onclick = () => { LIB.path = parentOf(LIB.path); renderHome(); };
-$("#libQ").addEventListener("input", e => { LIB.q = e.target.value; if (LIB.view === "trash") LIB.view = "proj"; renderHome(); });
+$("#libQ").addEventListener("input", e => { LIB.q = e.target.value; if (LIB.view === "trash" || LIB.view === "stats") LIB.view = "proj"; renderHome(); });
 $("#libSort").onchange = e => { LIB.sort = e.target.value; ls.set("ednote:libSort", LIB.sort); renderHome(); };
 $("#libView").onclick = () => { LIB.list = !LIB.list; ls.set("ednote:libView", LIB.list ? "list" : "grid"); renderHome(); };
 $("#libNewFolder").onclick = () => askText("Yeni klasörün adı", "", n => { const f = cleanPath((LIB.path ? LIB.path + "/" : "") + n); if (!f) return; saveFolders([...savedFolders(), f]); renderHome(); });
@@ -2910,6 +4245,19 @@ $("#hOpen").onclick = () => { $("#filePdf").dataset.mode = "new"; $("#filePdf").
 $("#hImport").onclick = () => $("#fileZip").click();
 $("#hFolder").hidden = !FS.supported; $("#hFolder").onclick = openFolderProject;
 $("#hSample").onclick = () => openSample();
+$("#bStk").onclick = () => openStickerPick($("#bStk"), v => addSticker(v));
+$("#grainChk").onchange = e => { if (e.target.checked) curSpace().grain = true; else delete curSpace().grain; renderSheet(); save(); };
+$("#hLook").onclick = () => openAppLook($("#hLook"));
+$("#mLook").onclick = () => { const b = $("#bMore"); closePop(); openAppLook(b); };
+$("#mFocus").onclick = () => { closePop(); setFocus(true); toast("Tam ekran. Çubukları geri getirmek için sağ üstteki düğmeye dokun."); };
+$("#focusExit").onclick = () => setFocus(false);
+$("#fUndo").onclick = () => $("#bUndo").click(); $("#fRedo").onclick = () => $("#bRedo").click();
+new MutationObserver(() => { $("#fUndo").disabled = $("#bUndo").disabled; $("#fRedo").disabled = $("#bRedo").disabled; }).observe($("#bUndo").parentNode, { attributes:true, subtree:true, attributeFilter:["disabled"] });
+const SPLIT_DIRS = { auto:"otomatik", h:"yan yana", v:"üst üste" };
+const splitDirLabel = () => { $("#mSplitDir").textContent = "Bölme yönü: " + SPLIT_DIRS[ls.get("ednote:splitDir") || "auto"]; };
+$("#mSplitDir").onclick = () => { const cur = ls.get("ednote:splitDir") || "auto", next = cur === "auto" ? "h" : cur === "h" ? "v" : "auto"; ls.set("ednote:splitDir", next === "auto" ? "" : next); splitDirLabel(); if (window.splitApply) window.splitApply(); toast("Bölme yönü: " + SPLIT_DIRS[next]); };
+splitDirLabel();
+if (ls.get("ednote:focus")) document.body.classList.add("focus");
 $("#filePdf").addEventListener("change", e => { const fs = [...e.target.files], mode = e.target.dataset.mode || "new"; e.target.value = ""; if (fs.length === 1) openPdfFile(fs[0], mode); else if (fs.length > 1) openPdfFiles(fs, mode); });
 $("#fileZip").addEventListener("change", e => { const f = e.target.files[0]; e.target.value = ""; if (f) importZip(f); });
 
@@ -2927,8 +4275,8 @@ document.addEventListener("keydown", e => {
   if (S.sel && S.tool === "select" && (e.key === "+" || e.key === "=" || e.key === "-")){ e.preventDefault(); cardFont(S.sel, e.key === "-" ? -1 : 1); return; }
   const keys = { v:"select", p:"pen", h:"hl", e:"eraser", t:"text", l:"lasso" };
   if (keys[e.key.toLowerCase()]){ setTool(keys[e.key.toLowerCase()]); return; }
-  if (e.key === "Escape"){ closePop(); cancelLink(); hideChip(); select(null); }
-  else if (e.key === "Delete" || e.key === "Backspace"){ if (S.selLink){ e.preventDefault(); removeLink(S.selLink); } else if (S.sel){ e.preventDefault(); removeItem(S.sel); } }
+  if (e.key === "Escape"){ closePop(); cancelLink(); hideChip(); select(null); iselClear(); }
+  else if (e.key === "Delete" || e.key === "Backspace"){ if (ISEL.on){ e.preventDefault(); iselDelete(); } else if (S.selStk){ e.preventDefault(); S.proj.stickers = stkList().filter(x => x.id !== S.selStk); S.selStk = null; renderStickers(); commit(); } else if (S.selLink){ e.preventDefault(); removeLink(S.selLink); } else if (S.sel){ e.preventDefault(); removeItem(S.sel); } }
 });
 
 /* ================= tags ================= */
@@ -3126,7 +4474,7 @@ function addPhoto({ src, w:iw, h:ih }){
   const v = AV(), fp = (v && v.fp) || (S.proj.docs[0] && S.proj.docs[0].fp);
   const p = defaultSpot({ w:300, h:Math.round(272 * ih / iw) + 90 });
   const it = stamp({ id:uid(), type:"image", photo:true, src, doc:fp, page:v && v.fp === fp ? v.curPage : 1, rects:[], space:S.space, color:S.lastColor, note:"", w:300, x:p.x, y:p.y });
-  if (S.lastBg && S.lastBg !== "white") it.bg = S.lastBg; if (S.lastFrame && S.lastFrame !== "thin") it.frame = S.lastFrame; if (S.lastFont) it.font = S.lastFont;
+  if (S.lastBg && S.lastBg !== "white") it.bg = S.lastBg; if (S.lastCc) it.cc = S.lastCc; if (S.lastFrame && S.lastFrame !== "thin") it.frame = S.lastFrame; if (S.lastFont) it.font = S.lastFont;
   S.proj.items.push(it); S.sel = it.id; renderWs(); commit(); showCardIfHidden(it.id);
   toast(it.rec ? "Fotoğraf kaydın bu anına bağlandı" : "Fotoğraf masaya eklendi");
 }
@@ -3267,7 +4615,7 @@ async function saveToDevice(file){
 function videoCard(meta, file, vid, local, st){
   const p = defaultSpot({ w:300, h:Math.round(272 * (meta.vh || 9) / (meta.vw || 16)) + 90 });
   const it = (st && st.rec ? o => Object.assign(o, st) : stamp)({ id:uid(), type:"video", vid, name:file.name, mime:file.type || "video/mp4", size:file.size, dur:r2(meta.dur), vw:meta.vw, vh:meta.vh, ...(meta.poster ? { poster:meta.poster } : {}), ...(local ? { local:true } : {}), space:S.space, color:S.lastColor, note:"", w:300, x:p.x, y:p.y });
-  if (S.lastBg && S.lastBg !== "white") it.bg = S.lastBg; if (S.lastFrame && S.lastFrame !== "thin") it.frame = S.lastFrame; if (S.lastFont) it.font = S.lastFont;
+  if (S.lastBg && S.lastBg !== "white") it.bg = S.lastBg; if (S.lastCc) it.cc = S.lastCc; if (S.lastFrame && S.lastFrame !== "thin") it.frame = S.lastFrame; if (S.lastFont) it.font = S.lastFont;
   S.proj.items.push(it); S.sel = it.id; renderWs(); commit(); showCardIfHidden(it.id); return it;
 }
 async function addVideo(f, st, hint){
@@ -3349,8 +4697,40 @@ const OD = (() => {
   const G = "https://graph.microsoft.com/v1.0", ROOT = G + "/me/drive/special/approot";
   const SCOPE = "Files.ReadWrite.AppFolder User.Read offline_access openid profile";
   const SMALL = +CFG.odSmallLimit || 4 * 1024 * 1024, CHUNK = 327680 * 16;
-  const st = { auth:null, busy:false, again:false, timer:null, last:0, err:"", needLogin:false, progress:"" };
+  const st = { auth:null, busy:false, again:false, timer:null, last:0, err:"", needLogin:false, progress:"", ctl:null, beat:0, sending:0, moved:0, fails:0, total:0, done:0, running:0, flash:"", flashT:null };
+  const WORKERS = 3, CALL_MS = 60000, BODY_MS = 90000, STALE_MS = 4 * 60000;
   const enabled = () => !!CID && /^https?:$/.test(location.protocol);
+  /* every request has a time limit and belongs to the running sync, so a request that hangs
+     (for example when Android pauses the app in the background) can never leave the sync stuck */
+  async function tfetch(url, opts = {}, ms = CALL_MS){
+    const c = new AbortController(), outer = st.ctl, kill = () => c.abort();
+    if (outer){ if (outer.signal.aborted) kill(); else outer.signal.addEventListener("abort", kill, { once:true }); }
+    const t = setTimeout(kill, ms);
+    try { const r = await fetch(url, { ...opts, signal:c.signal }); st.beat = Date.now(); return r; }
+    finally { clearTimeout(t); if (outer) outer.signal.removeEventListener("abort", kill); }
+  }
+  /* reads a download piece by piece; gives up only if nothing arrives for BODY_MS */
+  async function readBody(r, type){
+    if (!r.body || !r.body.getReader) return r.blob();
+    const rd = r.body.getReader(), parts = [], outer = st.ctl, size = +r.headers.get("Content-Length") || 0; let t, dead = false, got = 0, shown = 0;
+    const kill = () => { dead = true; rd.cancel().catch(() => {}); };
+    if (outer) outer.signal.addEventListener("abort", kill, { once:true });
+    try {
+      for (;;){
+        t = setTimeout(kill, BODY_MS);
+        const { done, value } = await rd.read(); clearTimeout(t);
+        if (dead) throw new Error("download stalled");
+        if (done) break; parts.push(value); st.beat = Date.now();
+        got += value.length; if (size > 4e6 && st.label && Date.now() - shown > 400){ shown = Date.now(); st.progress = st.label + " · %" + Math.round(got / size * 100); ui(); }
+      }
+    } finally { clearTimeout(t); if (outer) outer.signal.removeEventListener("abort", kill); }
+    if (dead) throw new Error("download stalled");
+    return new Blob(parts, { type:type || r.headers.get("Content-Type") || "" });
+  }
+  /* the same file is never sent or fetched twice at once by parallel workers */
+  const flight = new Map();
+  const once = (key, fn) => { if (!flight.has(key)) flight.set(key, fn().finally(() => flight.delete(key))); return flight.get(key); };
+  const isFatal = e => e instanceof NeedLogin || (st.ctl && st.ctl.signal.aborted);
   const redirectUri = () => location.origin + location.pathname.replace(/index\.html$/, "");
   const b64u = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
   const rand = n => b64u(crypto.getRandomValues(new Uint8Array(n)));
@@ -3372,7 +4752,7 @@ const OD = (() => {
     st.needLogin = false; await saveAuth();
   }
   async function tokenCall(params){
-    const r = await fetch(AUTH + "/token", { method:"POST", headers:{ "Content-Type":"application/x-www-form-urlencoded" }, body:new URLSearchParams({ client_id:CID, scope:SCOPE, ...params }) });
+    const r = await tfetch(AUTH + "/token", { method:"POST", headers:{ "Content-Type":"application/x-www-form-urlencoded" }, body:new URLSearchParams({ client_id:CID, scope:SCOPE, ...params }) });
     const j = await r.json().catch(() => ({})); if (!r.ok || !j.access_token) throw new Error(j.error_description || j.error || "token " + r.status); return j;
   }
   /* back from Microsoft's sign-in page: ?code=…&state=… */
@@ -3387,6 +4767,10 @@ const OD = (() => {
     try {
       await setTokens(await tokenCall({ grant_type:"authorization_code", code, redirect_uri:redirectUri(), code_verifier:pk.verifier }));
       try { const me = await (await gfetch(G + "/me?$select=displayName,userPrincipalName,mail")).json(); st.auth.account = me.userPrincipalName || me.mail || me.displayName || ""; await saveAuth(); } catch {}
+      /* sync records from an earlier sign-in are kept only for the same account */
+      const prev = ls.get("od:metaAcct") || "";
+      if (!st.auth.account || (prev && prev.toLowerCase() !== st.auth.account.toLowerCase())) await clearSyncMeta();
+      if (st.auth.account) ls.set("od:metaAcct", st.auth.account);
       toast("OneDrive'a bağlandı. Projelerin eşitleniyor…", null, 3500);
       return { back:pk.back };
     } catch (e){ console.error(e); toast("OneDrive'a bağlanılamadı: " + e.message, null, 5000); return null; }
@@ -3398,10 +4782,10 @@ const OD = (() => {
     try { await setTokens(await tokenCall({ grant_type:"refresh_token", refresh_token:st.auth.refresh })); return st.auth.access; }
     catch (e){ if (!navigator.onLine) throw e; st.needLogin = true; ui(); throw new NeedLogin(); }
   }
-  async function gfetch(url, opts = {}, again = true){
-    const r = await fetch(url, { ...opts, headers:{ ...(opts.headers || {}), Authorization:"Bearer " + await token() } });
-    if (r.status === 401 && again){ await token(true); return gfetch(url, opts, false); }
-    if ((r.status === 429 || r.status === 503) && again){ await sleep(Math.min(30, +r.headers.get("Retry-After") || 5) * 1000); return gfetch(url, opts, false); }
+  async function gfetch(url, opts = {}, again = true, ms = CALL_MS){
+    const r = await tfetch(url, { ...opts, headers:{ ...(opts.headers || {}), Authorization:"Bearer " + await token() } }, ms);
+    if (r.status === 401 && again){ await token(true); return gfetch(url, opts, false, ms); }
+    if ((r.status === 429 || r.status === 503) && again){ await sleep(Math.min(30, +r.headers.get("Retry-After") || 5) * 1000); return gfetch(url, opts, false, ms); }
     return r;
   }
 
@@ -3415,26 +4799,44 @@ const OD = (() => {
     return out;
   }
   const conflictErr = () => Object.assign(new Error("changed elsewhere"), { conflict:true });
+  /* time allowed for one upload request: enough for a slow phone connection (about 0.3 Mbit/s) */
+  const upMs = bytes => Math.max(CALL_MS, bytes / 40 + 30000);
   async function put(path, blob, ifMatch){
-    const h = ifMatch ? { "If-Match":ifMatch } : {};
-    if (blob.size <= SMALL){
-      const r = await gfetch(ROOT + ":/" + path + ":/content", { method:"PUT", headers:{ ...h, "Content-Type":blob.type || "application/octet-stream" }, body:blob });
-      if (r.status === 412) throw conflictErr(); if (!r.ok) throw new Error("upload " + r.status); return r.json();
-    }
-    const s = await gfetch(ROOT + ":/" + path + ":/createUploadSession", { method:"POST", headers:{ ...h, "Content-Type":"application/json" }, body:JSON.stringify({ item:{ "@microsoft.graph.conflictBehavior":"replace" } }) });
-    if (s.status === 412) throw conflictErr(); if (!s.ok) throw new Error("session " + s.status);
-    const { uploadUrl } = await s.json();
-    for (let o = 0; o < blob.size; o += CHUNK){
-      const end = Math.min(blob.size, o + CHUNK);
-      const r = await fetch(uploadUrl, { method:"PUT", headers:{ "Content-Range":`bytes ${o}-${end - 1}/${blob.size}` }, body:blob.slice(o, end) });
-      if (r.status === 412) throw conflictErr(); if (!r.ok) throw new Error("chunk " + r.status);
-      if (end === blob.size) return r.json();
-    }
+    st.sending++;
+    try {
+      const h = ifMatch ? { "If-Match":ifMatch } : {};
+      if (blob.size <= SMALL){
+        const r = await gfetch(ROOT + ":/" + path + ":/content", { method:"PUT", headers:{ ...h, "Content-Type":blob.type || "application/octet-stream" }, body:blob }, true, upMs(blob.size));
+        if (r.status === 412) throw conflictErr(); if (!r.ok) throw new Error("upload " + r.status); return await r.json();
+      }
+      const s = await gfetch(ROOT + ":/" + path + ":/createUploadSession", { method:"POST", headers:{ ...h, "Content-Type":"application/json" }, body:JSON.stringify({ item:{ "@microsoft.graph.conflictBehavior":"replace" } }) });
+      if (s.status === 412) throw conflictErr(); if (!s.ok) throw new Error("session " + s.status);
+      const { uploadUrl } = await s.json();
+      for (let o = 0; o < blob.size; o += CHUNK){
+        const end = Math.min(blob.size, o + CHUNK);
+        /* a piece that fails on a shaky connection is sent again (up to 3 tries) */
+        let r = null;
+        for (let k = 0; k < 3; k++){
+          try { r = await tfetch(uploadUrl, { method:"PUT", headers:{ "Content-Range":`bytes ${o}-${end - 1}/${blob.size}` }, body:blob.slice(o, end) }, upMs(end - o)); }
+          catch (e){ if (isFatal(e) || k === 2) throw e; r = null; }
+          if (r && (r.ok || r.status === 412 || (r.status < 500 && r.status !== 408 && r.status !== 429))) break;
+          await sleep(2000 * (k + 1));
+        }
+        if (r.status === 412) throw conflictErr(); if (!r.ok) throw new Error("chunk " + r.status);
+        if (end === blob.size) return await r.json();
+        if (st.label) { st.progress = st.label + " · %" + Math.round(end / blob.size * 100); ui(); }
+      }
+    } finally { st.sending--; }
   }
-  async function get(item, path){
+  /* returns the file's content as a Blob */
+  async function get(item, path, type){
     const dl = item && item["@microsoft.graph.downloadUrl"];
-    const r = dl ? await fetch(dl) : await gfetch(ROOT + ":/" + path + ":/content"); if (!r.ok) throw new Error("download " + r.status); return r;
+    let r = dl ? await tfetch(dl) : await gfetch(ROOT + ":/" + path + ":/content");
+    if (dl && (r.status === 401 || r.status === 403 || r.status === 404)) r = await gfetch(ROOT + ":/" + path + ":/content"); /* the ready-made download link can expire */
+    if (!r.ok) throw new Error("download " + r.status);
+    return readBody(r, type);
   }
+  const getJson = async (item, path) => JSON.parse(await (await get(item, path)).text());
   async function remove(path){ const r = await gfetch(ROOT + ":/" + path, { method:"DELETE" }); if (!r.ok && r.status !== 404) throw new Error("delete " + r.status); }
 
   /* ---------- what counts as a change: content only, not the view ---------- */
@@ -3447,45 +4849,72 @@ const OD = (() => {
   const metaOf = id => DB.get("meta", "od:p:" + id).catch(() => null);
   const setMeta = (id, eTag, hash) => DB.put("meta", { k:"od:p:" + id, eTag, hash });
 
+  const step = txt => { st.label = txt; st.progress = txt; ui(); };
   async function pushAssets(data, R){
     for (const d of data.docs || []){
-      if (R.pdfs.has(d.fp + ".pdf")) continue;
-      const p = await DB.get("pdfs", d.fp).catch(() => null); if (!p) continue;
-      st.progress = "PDF gönderiliyor: " + (d.name || "").slice(0, 30); ui();
-      R.pdfs.set(d.fp + ".pdf", await put("pdfs/" + d.fp + ".pdf", new Blob([p.bytes], { type:"application/pdf" })));
+      const fn = d.fp + ".pdf"; if (R.pdfs.has(fn)) continue;
+      await once("up:pdfs/" + fn, async () => {
+        if (R.pdfs.has(fn)) return;
+        const p = await DB.get("pdfs", d.fp).catch(() => null); if (!p) return;
+        step("PDF gönderiliyor: " + (d.name || "").slice(0, 30));
+        R.pdfs.set(fn, await put("pdfs/" + fn, new Blob([p.bytes], { type:"application/pdf" }))); st.moved++;
+      });
     }
     for (const r of data.recs || []){
       const fn = r.id + audioExt(r.mime); if (R.audio.has(fn) || (Rec.active && Rec.active.id === r.id)) continue;
-      const b = await DB.get("blobs", r.id).catch(() => null); if (!b) continue;
-      st.progress = "Ses kaydı gönderiliyor"; ui();
-      R.audio.set(fn, await put("audio/" + fn, b.blob));
+      await once("up:audio/" + fn, async () => {
+        if (R.audio.has(fn)) return;
+        const b = await DB.get("blobs", r.id).catch(() => null); if (!b) return;
+        step("Ses kaydı gönderiliyor");
+        R.audio.set(fn, await put("audio/" + fn, b.blob)); st.moved++;
+      });
     }
     for (const it of data.items || []){
       if (it.type !== "video" || it.local) continue; const fn = it.vid + videoExt(it.mime); if (R.media.has(fn)) continue;
-      const b = await DB.get("blobs", it.vid).catch(() => null); if (!b) continue;
-      st.progress = "Video gönderiliyor: " + it.name.slice(0, 30); ui();
-      R.media.set(fn, await put("media/" + fn, b.blob));
+      await once("up:media/" + fn, async () => {
+        if (R.media.has(fn)) return;
+        const b = await DB.get("blobs", it.vid).catch(() => null); if (!b) return;
+        step("Video gönderiliyor: " + it.name.slice(0, 30));
+        R.media.set(fn, await put("media/" + fn, b.blob)); st.moved++;
+      });
     }
   }
   async function pullAssets(data, R){
     for (const d of data.docs || []){
       if (await DB.get("pdfs", d.fp).catch(() => null)) continue;
       const it = R.pdfs.get(d.fp + ".pdf"); if (!it) continue;
-      st.progress = "PDF alınıyor: " + (d.name || "").slice(0, 30); ui();
-      await DB.put("pdfs", { fp:d.fp, name:d.name, bytes:new Uint8Array(await (await get(it, "pdfs/" + d.fp + ".pdf")).arrayBuffer()) });
+      await once("dn:pdf:" + d.fp, async () => {
+        if (await DB.get("pdfs", d.fp).catch(() => null)) return;
+        step("PDF alınıyor: " + (d.name || "").slice(0, 30));
+        const blob = await get(it, "pdfs/" + d.fp + ".pdf", "application/pdf");
+        await DB.put("pdfs", { fp:d.fp, name:d.name, bytes:new Uint8Array(await blob.arrayBuffer()) }); st.moved++;
+      });
     }
     for (const r of data.recs || []){
       if (await DB.get("blobs", r.id).catch(() => null)) continue;
       const fn = r.id + audioExt(r.mime), it = R.audio.get(fn); if (!it) continue;
-      await DB.put("blobs", { id:r.id, blob:await (await get(it, "audio/" + fn)).blob(), mime:r.mime });
+      await once("dn:blob:" + r.id, async () => {
+        if (await DB.get("blobs", r.id).catch(() => null)) return;
+        await DB.put("blobs", { id:r.id, blob:await get(it, "audio/" + fn, r.mime), mime:r.mime }); st.moved++;
+      });
     }
     for (const v of data.items || []){
       if (v.type !== "video" || v.local || await DB.get("blobs", v.vid).catch(() => null)) continue;
       const fn = v.vid + videoExt(v.mime), it = R.media.get(fn); if (!it) continue;
       if (await freeSpace() < it.size + 30e6) continue; /* no room on this device: the card says so and the video stays on OneDrive */
-      st.progress = "Video alınıyor: " + v.name.slice(0, 30); ui();
-      try { await DB.put("blobs", { id:v.vid, blob:await (await get(it, "media/" + fn)).blob(), mime:v.mime }); } catch (e){ console.warn("video", e); }
+      await once("dn:blob:" + v.vid, async () => {
+        if (await DB.get("blobs", v.vid).catch(() => null)) return;
+        step("Video alınıyor: " + v.name.slice(0, 30));
+        try { await DB.put("blobs", { id:v.vid, blob:await get(it, "media/" + fn, v.mime), mime:v.mime }); st.moved++; } catch (e){ if (isFatal(e)) throw e; console.warn("video", e); }
+      });
     }
+  }
+  /* a project that is already in step can still miss a file (an earlier sync was cut off): fill the gaps both ways */
+  async function heal(rec, R){
+    const d = rec.data;
+    const needUp = (d.docs || []).some(x => !R.pdfs.has(x.fp + ".pdf")) || (d.recs || []).some(x => !R.audio.has(x.id + audioExt(x.mime))) || (d.items || []).some(x => x.type === "video" && !x.local && !R.media.has(x.vid + videoExt(x.mime)));
+    if (needUp) await pushAssets(d, R);
+    await pullAssets(d, R);
   }
   async function upload(rec, R, ifMatch){
     await pushAssets(rec.data, R);
@@ -3501,13 +4930,46 @@ const OD = (() => {
   }
   const isOpen = id => S.proj && S.proj.id === id && document.body.dataset.view === "editor";
 
+  const refreshHome = () => { clearTimeout(st.rh); st.rh = setTimeout(() => { if (document.body.dataset.view === "home") renderHome(); }, 500); };
+  async function syncLibrary(){
+    const files = await list(""), it = files.get("library.json");
+    const remote = it ? await getJson(it, "library.json") : null, local = libState();
+    const merged = mergeLib(local, remote), mk = libKey(merged);
+    if (mk !== libKey(local)){ libSave(merged, true); applyAppLook(); if (document.body.dataset.view === "home") refreshHome(); }
+    if (!remote || mk !== libKey(mergeLib(remote, {}))){
+      step("Klasörler gönderiliyor");
+      await put("library.json", new Blob([JSON.stringify(merged)], { type:"application/json" }), it ? it.eTag : undefined);
+    }
+  }
+  /* runs the jobs WORKERS at a time; one failing job does not stop the others */
+  async function pool(jobs){
+    let i = 0, fatal = null; const failed = [];
+    const run = async () => {
+      while (i < jobs.length && !fatal){
+        const j = jobs[i++];
+        st.running++;
+        try { await j.run(); }
+        catch (e){ if (isFatal(e)){ fatal = fatal || e; st.running--; return; } console.warn("OneDrive", j.name, e); failed.push(j.name); }
+        st.running--; st.done++; ui();
+      }
+    };
+    await Promise.all(Array.from({ length:Math.min(WORKERS, jobs.length) }, run));
+    if (fatal) throw fatal;
+    return failed;
+  }
+
   /* ---------- one full sync ---------- */
   async function sync(manual){
     if (!enabled() || !st.auth) return;
     if (!navigator.onLine){ if (manual) toast("İnternet yok. Bağlantı gelince eşitlenecek."); return; }
-    if (st.busy){ st.again = true; return; }
-    st.busy = true; st.err = ""; ui();
-    let got = 0, sent = 0, copies = 0, removed = 0, reopen = null;
+    if (st.busy){
+      /* a sync that has heard nothing for minutes is stuck (the app was paused in the background): stop it and start again */
+      if (Date.now() - st.beat > STALE_MS && st.ctl){ st.ctl.abort(); st.again = true; }
+      else { st.again = true; if (manual) toast("Eşitleme zaten sürüyor."); }
+      return;
+    }
+    st.busy = true; st.err = ""; st.beat = Date.now(); st.moved = 0; st.total = 0; st.done = 0; st.running = 0; st.flash = ""; st.ctl = new AbortController(); st.progress = "OneDrive'a bakılıyor…"; ui();
+    let got = 0, sent = 0, copies = 0, removed = 0, reopen = null, failed = [];
     try {
       if (S.proj && !S.sample){ clearTimeout(saveTimer); await saveNow(); }
       const tick = S.editTick || 0;
@@ -3519,54 +4981,77 @@ const OD = (() => {
         if (it && it.eTag === t.eTag){ await remove("projects/" + id + ".json"); R.projects.delete(id + ".json"); }
         await DB.del("meta", t.k);
       }
-      const locals = await DB.all("projects"), seen = new Set();
+      /* folders (also empty ones), folder looks and the app look: library.json in the app folder */
+      try { await syncLibrary(); } catch (e){ if (isFatal(e)) throw e; console.warn("OneDrive library", e); failed.push("Klasörler ve görünüm"); }
+      const locals = await DB.all("projects"), seen = new Set(locals.map(r => r.id)), jobs = [];
       for (const rec of locals){
-        seen.add(rec.id); if (!rec.data) continue;
-        const m = await metaOf(rec.id), it = R.projects.get(rec.id + ".json"), lh = await contentHash(rec.data);
-        if (!it){
-          if (m && m.hash === lh && !isOpen(rec.id)){ await deleteLocalProject(rec.id); await DB.del("meta", "od:p:" + rec.id); removed++; continue; }
-          const n = await upload(rec, R); await setMeta(rec.id, n.eTag, lh); sent++; continue;
-        }
-        if (m && it.eTag === m.eTag){
-          if (m.hash !== lh){ const n = await upload(rec, R, it.eTag); await setMeta(rec.id, n.eTag, lh); sent++; }
-          continue;
-        }
-        const remote = await (await get(it, "projects/" + rec.id + ".json")).json(), rh = await contentHash(remote);
-        if (rh === lh){ await setMeta(rec.id, it.eTag, lh); continue; }
-        if (m && lh === m.hash){
-          if (isOpen(rec.id) && (S.editTick || 0) !== tick){ st.again = true; continue; }
-          const clean = await storeLocal(remote, R); await setMeta(rec.id, it.eTag, rh); got++;
-          if (isOpen(rec.id)) reopen = clean; continue;
-        }
-        if (m && rh === m.hash){ const n = await upload(rec, R, it.eTag); await setMeta(rec.id, n.eTag, lh); sent++; continue; }
-        /* changed on both devices: keep ours, save theirs next to it */
-        const copy = { ...remote, id:"p" + uid(), name:(remote.name || rec.name) + " (diğer cihaz, " + new Date().toLocaleDateString("tr-TR") + ")" };
-        const cc = await storeLocal(copy, R); const n2 = await upload({ id:cc.id, name:cc.name, data:(await DB.get("projects", cc.id)).data }, R); await setMeta(cc.id, n2.eTag, await contentHash(cc));
-        const n = await upload(rec, R, it.eTag); await setMeta(rec.id, n.eTag, lh); copies++; sent++;
+        if (!rec.data) continue;
+        jobs.push({ name:rec.name || rec.id, run:async () => {
+          const m = await metaOf(rec.id), it = R.projects.get(rec.id + ".json"), lh = await contentHash(rec.data);
+          if (!it){
+            if (m && m.hash === lh && !isOpen(rec.id)){ await deleteLocalProject(rec.id); await DB.del("meta", "od:p:" + rec.id); removed++; return; }
+            const n = await upload(rec, R); await setMeta(rec.id, n.eTag, lh); sent++; return;
+          }
+          if (m && it.eTag === m.eTag){
+            if (m.hash !== lh){ const n = await upload(rec, R, it.eTag); await setMeta(rec.id, n.eTag, lh); sent++; }
+            else await heal(rec, R);
+            return;
+          }
+          const remote = await getJson(it, "projects/" + rec.id + ".json"), rh = await contentHash(remote);
+          if (rh === lh){ await setMeta(rec.id, it.eTag, lh); await heal(rec, R); return; }
+          if (m && lh === m.hash){
+            if (isOpen(rec.id) && (S.editTick || 0) !== tick){ st.again = true; return; }
+            const clean = await storeLocal(remote, R); await setMeta(rec.id, it.eTag, rh); got++;
+            if (isOpen(rec.id)) reopen = clean; return;
+          }
+          if (m && rh === m.hash){ const n = await upload(rec, R, it.eTag); await setMeta(rec.id, n.eTag, lh); sent++; return; }
+          /* changed on both devices: keep ours, save theirs next to it */
+          const copy = { ...remote, id:"p" + uid(), name:(remote.name || rec.name) + " (diğer cihaz, " + new Date().toLocaleDateString("tr-TR") + ")" };
+          const cc = await storeLocal(copy, R); const n2 = await upload({ id:cc.id, name:cc.name, data:(await DB.get("projects", cc.id)).data }, R); await setMeta(cc.id, n2.eTag, await contentHash(cc));
+          const n = await upload(rec, R, it.eTag); await setMeta(rec.id, n.eTag, lh); copies++; sent++;
+        } });
       }
       /* new on OneDrive */
       for (const [name, it] of R.projects){
         const id = name.replace(/\.json$/, ""); if (seen.has(id) || !/\.json$/.test(name)) continue;
-        const remote = await (await get(it, "projects/" + name)).json(); if (!remote || remote.id !== id) continue;
-        const clean = await storeLocal(remote, R); await setMeta(id, it.eTag, await contentHash(clean)); got++;
+        jobs.push({ name, run:async () => {
+          const remote = await getJson(it, "projects/" + name); if (!remote || remote.id !== id) return;
+          const clean = await storeLocal(remote, R); await setMeta(id, it.eTag, await contentHash(clean)); got++;
+          refreshHome(); /* show each project as soon as it arrives */
+        } });
       }
-      st.last = Date.now(); ls.set("od:last", String(st.last));
+      st.total = jobs.length; st.done = 0; st.progress = ""; ui();
+      failed = [...failed, ...await pool(jobs)];
+      if (failed.length){
+        st.fails++; st.err = failed.length + " proje eşitlenemedi, yeniden denenecek";
+        if (manual) toast(`${failed.length} proje eşitlenemedi (${failed.slice(0, 2).join(", ")}${failed.length > 2 ? "…" : ""}). Biraz sonra kendiliğinden tekrar denenecek.`, null, 6000);
+      } else { st.fails = 0; st.last = Date.now(); ls.set("od:last", String(st.last)); }
       if (reopen){ await openProject(reopen); toast("Diğer cihazdaki değişiklikler alındı."); }
       if (copies) toast(`${copies} proje iki cihazda da değişmişti. Diğer cihazdaki sürüm "(diğer cihaz)" adıyla ayrıca kaydedildi.`, null, 7000);
-      else if (manual) toast(got || sent || removed ? `Eşitlendi: ${got} alındı, ${sent} gönderildi.` : "Her şey güncel.");
+      else if (manual && !failed.length) toast(got || sent || removed ? `Eşitlendi: ${got} alındı, ${sent} gönderildi.` : "Her şey güncel.");
       if (document.body.dataset.view === "home" && (got || copies || removed)) renderHome();
     } catch (e){
       if (e instanceof NeedLogin){ st.needLogin = true; if (manual) login(); }
-      else { console.warn("OneDrive", e); st.err = navigator.onLine ? "Eşitlenemedi" : "İnternet yok"; if (manual) toast("OneDrive ile eşitlenemedi. Biraz sonra tekrar denenecek."); }
+      else if (st.ctl.signal.aborted){ console.warn("OneDrive: stuck sync stopped"); }
+      else { console.warn("OneDrive", e); st.fails++; st.err = navigator.onLine ? "Eşitlenemedi, yeniden denenecek" : "İnternet yok"; if (manual) toast("OneDrive ile eşitlenemedi. Biraz sonra kendiliğinden tekrar denenecek."); }
     }
-    st.busy = false; st.progress = ""; ui();
+    st.busy = false; st.progress = ""; st.ctl = null;
+    /* a short "done" or "problem" state on the button so the end of a sync is visible too */
+    if (st.auth && !st.needLogin){ st.flash = st.err ? "err" : "ok"; clearTimeout(st.flashT); st.flashT = setTimeout(() => { st.flash = ""; ui(); }, st.err ? 4000 : 2200); }
+    ui();
+    /* try again soon after a problem: 30 s, 1 min, 2 min, then every 5 min */
     if (st.again){ st.again = false; soon(4000); }
+    else if (st.fails && !st.needLogin) soon(Math.min(5 * 60000, 30000 * 2 ** (st.fails - 1)));
   }
   function soon(ms = 15000){ if (!enabled() || !st.auth || st.needLogin) return; clearTimeout(st.timer); st.timer = setTimeout(() => sync(false), ms); }
   async function forget(id){ const m = await metaOf(id); if (m){ await DB.put("meta", { k:"od:del:" + id, eTag:m.eTag }); await DB.del("meta", "od:p:" + id); soon(2000); } }
+  /* what this device knows about OneDrive (which version of each project it last saw) stays after disconnecting,
+     so reconnecting the same account does not have to compare everything again. Another account starts clean. */
+  async function clearSyncMeta(){ for (const m of await DB.all("meta").catch(() => [])) if (/^od:(p|del):/.test(m.k)) await DB.del("meta", m.k).catch(() => {}); }
   async function logout(){
+    if (st.ctl) st.ctl.abort();
+    if (st.auth && st.auth.account) ls.set("od:metaAcct", st.auth.account); else await clearSyncMeta();
     st.auth = null; await saveAuth();
-    for (const m of await DB.all("meta").catch(() => [])) if (/^od:(p|del):/.test(m.k)) await DB.del("meta", m.k).catch(() => {});
     ui(); toast("OneDrive bağlantısı kesildi. Projeler bu cihazda kaldı.");
   }
 
@@ -3576,11 +5061,22 @@ const OD = (() => {
     const row = $("#odRow"), on = enabled(); row.hidden = !on; $("#mSync").hidden = !on;
     if (!on) return;
     const txt = $("#odText"), btn = $("#odBtn"), off = $("#odOff");
+    btn.classList.remove("syncing", "sync-ok", "sync-err"); row.classList.remove("syncing");
     if (!st.auth){ txt.textContent = "Projelerini cihazların arasında eşitle"; btn.textContent = "Bağlan"; btn.onclick = login; off.hidden = true; $("#mSync").textContent = "OneDrive'a bağlan"; return; }
     off.hidden = false; $("#mSync").textContent = "OneDrive ile şimdi eşitle";
     if (st.needLogin){ txt.textContent = (st.auth.account ? st.auth.account + " · " : "") + "oturumu yenilemek gerekiyor"; btn.textContent = "Yeniden giriş"; btn.onclick = login; $("#mSync").textContent = "OneDrive'a yeniden giriş yap"; return; }
-    txt.textContent = (st.auth.account ? st.auth.account + " · " : "") + (st.busy ? (st.progress || "eşitleniyor…") : st.err ? st.err : st.last ? "eşitlendi, " + ago(st.last) : "bağlı");
-    btn.textContent = "Şimdi eşitle"; btn.disabled = st.busy; btn.onclick = () => sync(true);
+    /* rough share: finished projects plus a little for the ones being worked on */
+    const frac = st.total ? Math.min(0.99, (st.done + 0.3 * st.running) / st.total) : 0, count = st.total > 1 ? `${st.done}/${st.total} proje` : "";
+    const busyTxt = [st.progress || (st.total ? "eşitleniyor" : "OneDrive'a bakılıyor…"), count, st.moved ? st.moved + " dosya tamam" : ""].filter(Boolean).join(" · ");
+    txt.textContent = st.busy ? busyTxt : (st.err ? st.err : st.last ? "eşitlendi, " + ago(st.last) : "bağlı") + (st.auth.account ? " · " + st.auth.account : "");
+    txt.title = st.auth.account || "";
+    btn.disabled = false; btn.onclick = () => sync(true);
+    btn.classList.toggle("syncing", st.busy); btn.classList.toggle("sync-ok", !st.busy && st.flash === "ok"); btn.classList.toggle("sync-err", !st.busy && st.flash === "err");
+    btn.style.setProperty("--odp", st.busy ? Math.max(0.03, frac).toFixed(3) : "0");
+    btn.textContent = st.busy ? (st.total > 1 ? `Eşitleniyor %${Math.round(frac * 100)}` : "Eşitleniyor…") : st.flash === "ok" ? "✓ Eşitlendi" : st.flash === "err" ? "Tekrar dene" : "Şimdi eşitle";
+    btn.setAttribute("aria-busy", st.busy ? "true" : "false");
+    $("#odRow").classList.toggle("syncing", st.busy);
+    $("#mSync").textContent = st.busy ? "OneDrive: eşitleniyor" + (st.total > 1 ? ` (%${Math.round(frac * 100)})` : "…") : "OneDrive ile şimdi eşitle";
     if (S.proj && !S.sample && document.body.dataset.view === "editor" && !st.busy && st.last && !st.err && el.saveState.textContent.startsWith("Kaydedildi")) setSaveState("Kaydedildi · OneDrive");
   }
   let booted = false;
@@ -3588,13 +5084,20 @@ const OD = (() => {
     if (booted) return null; booted = true; /* runs once: at start, or right after the licence is entered */
     if (!enabled()){ ui(); return null; }
     try { const a = await DB.get("meta", "od:auth"); if (a && a.access) { const { k, ...rest } = a; st.auth = rest; } } catch {}
+    if (st.auth && st.auth.account && !ls.get("od:metaAcct")) ls.set("od:metaAcct", st.auth.account);
     st.last = +ls.get("od:last") || 0;
     const back = await handleRedirect();
     ui();
     if (st.auth){ await sync(false); }
     window.addEventListener("online", () => soon(1500));
-    document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") sync(false); else soon(1500); });
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "hidden"){ sync(false); return; }
+      /* back from the background: a sync that was paused there is restarted at once */
+      if (st.busy && Date.now() - st.beat > 30000 && st.ctl){ st.ctl.abort(); st.again = true; } else soon(1500);
+    });
     setInterval(() => { if (document.visibilityState === "visible") sync(false); }, 3 * 60 * 1000);
+    /* closing the page while files are still going up: ask first (the rest would wait until ED Note is opened again) */
+    window.addEventListener("beforeunload", e => { if (st.sending > 0){ e.preventDefault(); e.returnValue = ""; } });
     setInterval(ui, 60 * 1000);
     return back;
   }
@@ -3738,6 +5241,23 @@ $("#licRetry").onclick = () => licCheck(true);
 $("#licExport").onclick = async () => { const rs = await DB.all("projects").catch(() => []); if (!rs.length){ toast("Bu cihazda proje yok."); return; } for (const r of rs) await exportZip(r.id); };
 document.addEventListener("keydown", e => { if (licShown && !(e.target && e.target.closest && e.target.closest("#licGate"))) e.stopImmediatePropagation(); }, true);
 
+/* ================= Android: "open with ED Note" and "share to ED Note" (.ednote, .zip, .pdf) ================= */
+async function openIncoming(file){
+  if (licShown){ toast("Önce lisans kodunu gir, sonra dosyayı tekrar aç.", null, 5000); return; }
+  const head = new Uint8Array(await file.slice(0, 8).arrayBuffer()), txt = String.fromCharCode(...head);
+  if (txt.startsWith("%PDF") || /\.pdf$/i.test(file.name)){ if (document.body.dataset.view === "editor"){ clearTimeout(saveTimer); try { await saveNow(); } catch {} } await openPdfFile(file); return; }
+  await importZip(file);
+}
+if (NATIVE){
+  const In = capPlugin("EdIncoming");
+  if (In && In.addListener) In.addListener("file", async ({ path, name }) => {
+    try {
+      const blob = await (await fetch(window.Capacitor.convertFileSrc(path))).blob();
+      await openIncoming(new File([blob], name || "dosya.ednote"));
+    } catch (e){ console.error(e); toast("Dosya açılamadı.", null, 4000); }
+  });
+}
+
 /* ================= Android: back button ================= */
 if (NATIVE){
   const App = capPlugin("App");
@@ -3747,44 +5267,57 @@ if (NATIVE){
   });
 }
 
-/* ================= splitter: drag to set the widths; drag all the way to an edge to hide the workspace or the document ================= */
+/* ================= splitter: drag to set the sizes; drag all the way to an edge to hide the workspace or the document =================
+   v6.9.8: on tall screens (phones and tablets held upright) the document is on top and the workspace below. */
 (function(){
-  const main = $("#main"), split = $("#split"), SNAP = 70, MIN_WS = 170;
-  const saved = parseFloat(ls.get("alinti:split")); if (saved >= 12 && saved <= 95) main.style.setProperty("--left", saved + "%");
+  const main = $("#main"), split = $("#split"), SNAP = 70, MIN_WS = 150;
+  const savedL = parseFloat(ls.get("alinti:split")); if (savedL >= 12 && savedL <= 95) main.style.setProperty("--left", savedL + "%");
+  const savedT = parseFloat(ls.get("ednote:splitV")); if (savedT >= 12 && savedT <= 95) main.style.setProperty("--top", savedT + "%");
   let collapse = ls.get("ednote:collapse") || "";
+  const dirPref = () => ls.get("ednote:splitDir") || "auto";
+  const vert = () => { const d = dirPref(); if (d === "v") return true; if (d === "h") return false; return innerHeight > innerWidth * 1.1 && innerWidth < 1100; };
   const apply = () => {
-    const c = isNarrow() ? "" : collapse;
-    if (c) main.dataset.collapse = c; else delete main.dataset.collapse;
-    split.title = c === "ws" ? "Masayı aç" : c === "pdf" ? "Belgeyi aç" : "Genişliği ayarla (kenara kadar sürükleyince o taraf kapanır)";
+    main.classList.toggle("vert", vert());
+    if (collapse) main.dataset.collapse = collapse; else delete main.dataset.collapse;
+    const v = main.classList.contains("vert");
+    split.title = collapse === "ws" ? "Masayı aç" : collapse === "pdf" ? "Belgeyi aç" : v ? "Yüksekliği ayarla (kenara kadar sürükleyince o taraf kapanır)" : "Genişliği ayarla (kenara kadar sürükleyince o taraf kapanır)";
     requestAnimationFrame(() => { S.viewers.forEach(v => v.fp && !v.root.hidden && fitWidth(v)); if (S.proj){ applyView(); drawLinks(); } scheduleX(); });
   };
+  window.splitApply = apply;
   const setCollapse = c => { collapse = c; ls.set("ednote:collapse", c); apply(); };
-  narrowMQ.addEventListener ? narrowMQ.addEventListener("change", apply) : narrowMQ.addListener(apply);
+  let rt; addEventListener("resize", () => { const was = main.classList.contains("vert"); if (vert() !== was){ clearTimeout(rt); rt = setTimeout(apply, 120); } });
   apply();
   split.addEventListener("pointerdown", e => {
     split.setPointerCapture(e.pointerId);
-    const x0 = e.clientX, was = collapse; let moved = false, snap = "";
-    const r = () => main.getBoundingClientRect();
+    const V = main.classList.contains("vert"), p0 = V ? e.clientY : e.clientX, was = collapse; let moved = false, snap = "";
     const move = ev => {
-      if (!moved && Math.abs(ev.clientX - x0) < 4) return; moved = true;
-      const b = r(), x = ev.clientX - b.left;
-      snap = x > b.width - SNAP ? "ws" : x < SNAP ? "pdf" : "";
+      const pos = V ? ev.clientY : ev.clientX; if (!moved && Math.abs(pos - p0) < 4) return; moved = true;
+      const b = main.getBoundingClientRect(), size = V ? b.height : b.width, x = pos - (V ? b.top : b.left);
+      snap = x > size - SNAP ? "ws" : x < SNAP ? "pdf" : "";
       if (snap){ if (collapse !== snap){ collapse = snap; apply(); } return; }
       if (collapse){ collapse = ""; apply(); }
-      const maxPct = (b.width - MIN_WS - 14) / b.width * 100;
-      main.style.setProperty("--left", clamp(x / b.width * 100, 15, maxPct) + "%"); scheduleX();
+      const maxPct = (size - MIN_WS - 14) / size * 100;
+      main.style.setProperty(V ? "--top" : "--left", clamp(x / size * 100, 15, maxPct) + "%"); scheduleX();
     };
     const up = () => {
       split.removeEventListener("pointermove", move); split.removeEventListener("pointerup", up); split.removeEventListener("pointercancel", up);
       if (!moved){ if (was) setCollapse(""); return; } /* a tap on the bar re-opens a hidden side */
-      if (snap){ const sv = parseFloat(ls.get("alinti:split")); main.style.setProperty("--left", (sv >= 12 && sv <= 95 ? sv : 54) + "%"); } /* re-opening goes back to the last width */
+      const key = V ? "ednote:splitV" : "alinti:split", prop = V ? "--top" : "--left";
+      if (snap){ const sv = parseFloat(ls.get(key)); main.style.setProperty(prop, (sv >= 12 && sv <= 95 ? sv : V ? 50 : 54) + "%"); } /* re-opening goes back to the last size */
       setCollapse(snap);
-      if (!snap) ls.set("alinti:split", String(parseFloat(main.style.getPropertyValue("--left")) || 54));
+      if (!snap) ls.set(key, String(parseFloat(main.style.getPropertyValue(prop)) || (V ? 50 : 54)));
       if (snap) toast(snap === "ws" ? "Masa gizlendi. Açmak için kenardaki çubuğa dokun." : "Belge gizlendi. Açmak için kenardaki çubuğa dokun.");
     };
     split.addEventListener("pointermove", move); split.addEventListener("pointerup", up); split.addEventListener("pointercancel", up);
   });
 })();
+
+/* ================= focus mode (v6.9.8): hide the top bar, keep the tools at the side, use the whole screen ================= */
+function setFocus(on){
+  document.body.classList.toggle("focus", on); ls.set("ednote:focus", on ? "1" : "");
+  try { if (on && document.documentElement.requestFullscreen && !document.fullscreenElement) document.documentElement.requestFullscreen().catch(() => {}); else if (!on && document.fullscreenElement) document.exitFullscreen().catch(() => {}); } catch {}
+  if (window.splitApply) window.splitApply();
+}
 
 /* ================= sample project ================= */
 const HW = {" ":278,"!":278,'"':355,"#":556,"$":556,"%":889,"&":667,"'":191,"(":333,")":333,"*":389,"+":584,",":278,"-":333,".":278,"/":278,":":278,";":278,"<":584,"=":584,">":584,"?":556,"@":1015,"[":278,"\\":278,"]":278,"^":469,"_":556,"`":333,"{":334,"|":260,"}":334,"~":584,
@@ -3856,7 +5389,7 @@ async function openSample(){
 
 /* ================= boot ================= */
 async function boot(){
-  loadPrefs(); setReadMode(S.readMode); setTool("select");
+  loadPrefs(); setReadMode(S.readMode); applyAppLook(); setTool("select");
   if (ls.get("alinti:penOnly") === "1") setPenOnly(true, false);
   S.recMode = ls.get("alinti:recMode") === "keep" ? "keep" : "trace"; renderRecModeIcon();
   await migrateOld();
@@ -3875,6 +5408,6 @@ async function boot(){
     }).catch(() => {});
   }
 }
-window.EDNote = window.AlintiMasasi = { version:APP_VERSION, _S:S, _OD:OD, _Rec:Rec, _save:nativeSave };
+window.EDNote = window.AlintiMasasi = { version:APP_VERSION, _S:S, _OD:OD, _Rec:Rec, _save:nativeSave, _DB:DB, _ingest:ingestPdf, _empty:emptyProject };
 boot();
 })();

@@ -1,6 +1,6 @@
 {
   "name": "ed-note",
-  "version": "6.9.2",
+  "version": "6.9.9",
   "private": true,
   "description": "ED Note: PDF okuma, alıntı ve not masası",
   "scripts": {

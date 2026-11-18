@@ -192,3 +192,65 @@ Kimlik gizli bir şifre değildir, depoda durabilir. Gizli anahtar (client secre
 
 - Android uygulamasında Microsoft girişinden (lisans ve OneDrive) dönünce çıkan "Web sayfası mevcut değil, ERR_CONNECTION_REFUSED" hatası düzeltildi (`MainActivity.java`).
 - Giriş ekranında kişisel Microsoft hesabı öneriliyor.
+
+## Sürüm 6.9.3: daha hızlı ve takılmayan OneDrive eşitlemesi
+
+- Dosyalar artık 3'er 3'er gönderiliyor ve alınıyor (önce tek tek gidiyordu).
+- Bir dosyada hata çıkınca sadece o proje bekliyor, diğerleri eşitlenmeye devam ediyor. Hatalı proje 30 sn, 1 dk, 2 dk, sonra 5 dakikada bir kendiliğinden yeniden deneniyor. Durum satırında "N proje eşitlenemedi, yeniden denenecek" yazıyor.
+- Her isteğin süre sınırı var. Telefonda uygulama arka plana geçip yarım kalan bir indirme takılırsa, uygulamaya dönünce eşitleme kendini durdurup baştan başlıyor (önceden uygulama kapatılıp açılana kadar hiçbir şey eşitlenmiyordu).
+- Büyük dosyalarda kopan parça 3 kere yeniden gönderiliyor. Süresi dolan indirme bağlantısı yenileniyor.
+- Önceki bir eşitleme yarıda kaldıysa eksik PDF, ses ve videolar sonraki turda tamamlanıyor.
+- Her proje gelir gelmez ana ekranda görünüyor; durum satırında kaç dosyanın tamamlandığı yazıyor.
+- Dosyalar gönderilirken sayfayı kapatmaya çalışınca tarayıcı önce soruyor.
+- OneDrive bağlantısını kesip aynı hesapla yeniden bağlanınca uygulama neyin eşitlendiğini unutmuyor, her şeyi baştan indirip karşılaştırmıyor. Başka bir hesapla bağlanınca temiz başlıyor.
+- Yeni test: `tests/onedrive.test.js` (sahte OneDrive, iki cihaz, hatalı dosya, takılan indirme, yeniden bağlanma).
+
+## Sürüm 6.9.4: biçimli notlar, geniş renk paleti, yumuşak kalem, .ednote ile aç
+
+- **OneDrive düğmesi:** Eşitlerken düğmede "Eşitleniyor %…" yazıyor ve çerçevesinde mavi bir ışık dönüyor; çerçeve ilerledikçe doluyor. Bitince kısa süre yeşil "✓ Eşitlendi", sorun çıkarsa "Tekrar dene". Altında ne yapıldığı yazıyor (hangi PDF gidiyor, büyük dosyada yüzde kaç, kaç proje bitti). Menüdeki eşitleme satırı da durumu gösteriyor.
+- **Biçimli notlar:** Kart notlarında seçili yazıya kalın, italik, altı çizili, yazı rengi ve yazı tipi. Not düzenlenirken üst çubuğun altında biçim çubuğu çıkıyor (Ctrl+B, Ctrl+I, Ctrl+U de çalışır). Hiçbir şey seçili değilken basılan biçim, sonra yazılan harflere uygulanıyor. Formüllü notlarda da biçim korunuyor. Notlu PDF'te ve Markdown'da biçim görünüyor (Markdown'da kalın, italik, altı çizili). Not verisinde düz metin (`note`) aynen duruyor, biçim ayrı bir alanda (`rich`); eski sürümler notu düz metin olarak görür.
+- **Geniş renk paleti:** Kart rengi ve kağıt rengi için tek düğme, tıklayınca hazır renkler, son kullanılanlar ve istediğin herhangi bir renk (renk seçici ya da #kod). Masa kağıdında "+" ile başka renk. Kart menüsünde "Görünüm": Kopyala, Yapıştır, Karttan al (dokunduğun kartın rengi, kağıdı, çerçevesi, yazı tipi ve yazı boyutu bu karta geçer).
+- **Kalem:** Kalemle ve parmakla çizilen çizgiler titremeden pürüzsüz çıkıyor (One Euro filtresi; yavaşken sakin, hızlıyken gecikmesiz), basınçlı çizginin kenarları eğri. Kalemin gideceği yer tahmin edilip çizgi önden çiziliyor, gecikme daha az hissediliyor. Eski çizimler de daha yumuşak görünüyor, veriler değişmedi.
+- **.ednote dosyası:** Dosyanın başında artık kendi imzası var ("EDNOTE/1"), WhatsApp gibi uygulamalar onu zip sanıp adına .zip eklemiyor. Eski dosyalar ve adı .zip'e çevrilmiş dosyalar açılmaya devam ediyor; eski ED Note sürümleri de yeni dosyaları açabiliyor.
+- **Android:** .ednote dosyasına ya da PDF'e dokununca "ED Note ile aç" çıkıyor; WhatsApp ve diğer uygulamalardan "Paylaş > ED Note" ile de gönderilebiliyor (`EdIncomingPlugin.java`, manifestte intent filtreleri).
+- Yeni test dosyası `tests/fixtures/v6.9.4.ednote` (biçimli not, serbest kart rengi, serbest kağıt rengi).
+
+## Sürüm 6.9.5: kişiselleştirme (kütüphane ve uygulama görünümü)
+
+- **Klasörler:** Siyah hat kaldırıldı; klasör artık dolu, yumuşak gölgeli. İçindeki ilk projenin kapağı klasörden hafifçe görünüyor (kapatılabilir). Klasörün ⋯ menüsünde (ya da sağ tıkla) **Görünüm**: renk (renk verilmezse vurgu rengine uyar), çıkartma (5 grupta hazır emojiler, kendi emojin ya da kendi görselin, şeffaf PNG de olur), yerleşim (köşede, ortada, klasörün yerine). Görsel ya da çıkartma "klasörün yerine" seçilince klasör simgesi yerine o görünür, köşesinde küçük bir klasör işareti kalır.
+- **Projeler:** ⋯ menüsünde Yıldızla, En üste sabitle, Renk etiketi, Kapak seç (herhangi bir sayfa, birden çok belgede belge seçimi, ya da kendi fotoğrafın). Kartta renkli kurdele, yıldız, sabitleme işareti ve okuma çubuğu (en ileri okunan sayfaya göre; "%35", "bitti"). Sol menüde **Yıldızlı** bölümü. Sabitlenenler her sıralamada en üstte.
+- **Uygulamanın görünümü:** Sol alttaki **Görünüm** düğmesi (editörde ⋯ > Görünüm ayarları): vurgu rengi (10 hazır renk ya da istediğin renk; koyu temada otomatik açılır), tema (Sistem, Koyu, Sepya), arayüz yazı tipi (40 yazı tipinden biri), yoğunluk (Ferah, Sıkı).
+- **Eşitleme:** Boş klasörler, klasör görünümleri, vurgu rengi ve arayüz yazı tipi OneDrive'daki `library.json` ile cihazlar arasında eşitleniyor (her kayıtta zaman damgası, yenisi kazanır; silinen klasör diğer cihazda da siliniyor). Yıldız, sabitleme, etiket, kapak ve okuma ilerlemesi projenin içinde olduğu için proje ile birlikte eşitleniyor. Yoğunluk ve tema her cihazda ayrı.
+- Eski sürümler bu yeni alanları yok sayar. Yeni test dosyası `tests/fixtures/v6.9.5.ednote`; OneDrive testine kütüphane eşitlemesi eklendi.
+
+## Sürüm 6.9.6: masayı kişiselleştirme
+
+- **Masa yüzeyi:** Kağıdın dışındaki masa için Düz, Ahşap, Mantar pano, Karatahta, Keten, Keçe (görsel dosya yok, gürültüden çiziliyor; masa kaydırılınca birlikte kayar). Kağıda istenirse lif dokusu. Masa sayfası penceresinde (masa sekmesinin ⋯ menüsü > Masa sayfası). Masa başına ayrı.
+- **Grup kutuları:** Başlıktaki palet düğmesiyle renk (çerçeve ve başlık bandı) ve kağıt. Notlu PDF'te de.
+- **Kayıtlı kart stilleri:** Kart stil penceresinin en üstünde Tanım, Soru, Önemli, Formül, Fikir hazır stilleri; tek dokunuşla renk, kağıt, çerçeve, yazı tipi ve yazı boyutu birlikte uygulanır. "+ Bu görünümü kaydet" ile kendi stilin; "Düzenle" ile ad değiştirme ve silme. Stiller OneDrive ile diğer cihazlara gelir.
+- **Çıkartmalar:** Masanın alt çubuğunda çıkartma düğmesi (hazır emojiler, kendi emojin ya da görselin). Sürükleyip bir kartın üstüne bırakınca karta yapışır, kart taşınınca onunla gider; karttan dışarı sürükleyince masaya döner. Seçince küçült, büyüt, döndür, sil. Kart stil penceresinde "Karta çıkartma ekle". Geri al ile geri alınır, notlu PDF'te renkli görünür. Eski sürümler çıkartmaları göstermez.
+- **Bağlantı çizgisi biçimi:** Bağlantı araç çubuğunda eğri, düz ve köşeli; son seçim yeni bağlantılarda kullanılır. Notlu PDF'te de.
+- Yeni test dosyası `tests/fixtures/v6.9.6.ednote`; OneDrive testinde kart stillerinin eşitlenmesi de denetleniyor.
+
+## Sürüm 6.9.7: kalemler
+
+- **Kalem kutusu:** Kalem ya da fosforlu kalem seçiliyken araç çubuğunun solunda kayıtlı kalemlerin; her biri çizdiği çizginin küçük bir örneğiyle görünür. Tek dokunuşla tür, uç, renk ve kalınlık birlikte seçilir. Hazır gelenler: Siyah, Mavi tükenmez, Kırmızı, Kurşun kalem, Kaligrafi, Sarı ve Yeşil fosforlu. "+" ile o an kullandığın kalemi kutuya eklersin (en çok 8); "Düzenle" ile ad değiştirir ya da çıkarırsın. Kutu OneDrive ile diğer cihazlara gelir.
+- **Serbest renkler:** Kalem, fosforlu kalem ve metin kutusunda hazır renklerin yanında "+" ile istediğin renk (hazır renkler, son kullanılanlar, renk seçici ya da #kod). Notlu PDF'te de aynı renk.
+- **Uçlar:** Kalem için Mürekkep, Kurşun kalem (grenli grafit dokusu) ve Kaligrafi (45° tutulmuş yassı uç: bir yönde ince, karşı yönde kalın). Notlu PDF'te kaligrafi dolu şekil olarak, kurşun kalem gri çizgi olarak çıkar.
+- Eski sürümler serbest renkli çizgileri siyah (fosforluyu sarı), uçları mürekkep olarak gösterir; çizgiler kaybolmaz.
+- Yeni test dosyası `tests/fixtures/v6.9.7.ednote`; OneDrive testinde kalem kutusunun eşitlenmesi de denetleniyor.
+
+## Sürüm 6.9.8: her ekranda tek görünüm, ince çubuklar, çizimleri seçip taşıma
+
+- **Tek ekran:** Telefonda da tablette de belge ve masa artık hep birlikte görünür (Belge / Masa sekmeleri kalktı). Dik tutulan ekranda belge üstte, masa altta; yatayda yan yana. Aradaki çubukla boyut ayarlanır, kenara kadar sürükleyince o taraf gizlenir. ⋯ menüsünde "Bölme yönü": otomatik, yan yana, üst üste. 700 pikselden dar belge alanında aynı anda tek belge gösterilir.
+- **İnce çubuklar:** Dokunmatik ekranlarda ve küçük pencerelerde üst çubuk tek satır ve 46 piksel; belge başlığı satırı da inceldi. Kalem ve fosforlu seçenekleri artık içeriği aşağı itmiyor, üstünde yüzüyor. Telefonda belge adı, ileri al ve arama gizlenir.
+- **Tam ekran:** ⋯ > "Tam ekran (çubukları gizle)". Üst çubuk kaybolur; araçlar ile geri al, ileri al ve çıkış düğmesi solda yüzen bir şeritte kalır. Tarayıcı izin verirse ekran da tam ekrana geçer.
+- **Çizimleri seçme:** Kement aracıyla kalem ya da fosforlu çizimlerinin etrafını çiz; seçilirler (PDF'te ve masada). Çerçevenin içinden sürükleyerek taşı, köşelerden büyüt ya da küçült (çizgi kalınlığı da orantılı değişir). Üstteki çubukta renk değiştir, çoğalt, sil, bitti; PDF'te "bölgeyi görsel olarak masaya ekle". Delete ile silinir, Esc ile seçim kalkar, geri al çalışır. Kementin içinde çizim yoksa eskisi gibi bölge görsel olarak masaya eklenir.
+
+## Sürüm 6.9.9: şekil tanıma, yakınlaştırma düzeltmesi, genel bakış
+
+- **Yakınlaştırma:** PDF'de iki parmakla, Ctrl + tekerlekle ya da düğmelerle yakınlaştırırken parmakların (ya da imlecin) altındaki nokta artık yerinde kalır. Önceden sayfa araları ve kenar boşlukları hesaba katılmadığı için görüntü kayıyordu. Düğmeler ve klavye görünümün ortasını sabit tutar.
+- **Şekil tanıma:** Kalemle ya da fosforlu kalemle çiz, kalemi kaldırmadan bir an (yarım saniye kadar) beklet: çizgi, ok, daire, elips, üçgen, kare, dikdörtgen, dörtgen, beşgen ya da altıgen düzgün hale gelir. Beklemezsen hiçbir şey değişmez, bu yüzden "O" harfi daire olmaz. Kalem seçeneklerindeki **Şekil** düğmesiyle kapatılabilir. PDF'de ve masada çalışır.
+- **Yoğunluk şeridi:** Her PDF'nin sağ kenarında hangi sayfalarda alıntı, yorum, vurgu ya da çizim olduğunu gösteren işaretler. Çizginin kalınlığı o sayfadaki iş miktarını gösterir. Üstüne gelince ayrıntı, dokununca o sayfaya gider.
+- **Mini harita:** Masa araç çubuğundaki yeni düğme. Köşede tüm kartları ve şu an görünen alanı gösterir; dokunup sürükleyerek masada gezinilir.
+- **Okuma panosu:** Kitaplıkta yeni **Okuma** sayfası. Bugün ve bu hafta okunan sayfa ve süre, üst üste okunan gün sayısı, son 6 ayın gün gün renkli takvimi ve projelerdeki ilerleme. Her cihaz kendi kaydını tutar, OneDrive bağlıysa hepsi birleşir.
