@@ -1254,6 +1254,8 @@ i.hm.l1{background:color-mix(in srgb,var(--accent) 30%,var(--surface))} i.hm.l2{
   .opts #swatches,.opts #sizes{flex-wrap:wrap;justify-content:center;row-gap:4px;max-width:100%}
   .penbox{flex-wrap:wrap;justify-content:center;border-radius:18px;overflow:visible;max-width:calc(100vw - 20px)}
 }
+/* phones and tablets: a tap outside the tool menu folds it away; tapping a tool brings it back */
+body.opts-shut #opts,body.opts-shut #penBox{display:none!important}
 @media (max-width:600px){
   .topbar{display:flex}
   .tb-left,.tb-right{flex:none}

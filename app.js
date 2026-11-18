@@ -4249,6 +4249,15 @@ $("#bStk").onclick = () => openStickerPick($("#bStk"), v => addSticker(v));
 $("#grainChk").onchange = e => { if (e.target.checked) curSpace().grain = true; else delete curSpace().grain; renderSheet(); save(); };
 $("#hLook").onclick = () => openAppLook($("#hLook"));
 $("#mLook").onclick = () => { const b = $("#bMore"); closePop(); openAppLook(b); };
+/* v6.9.9: on small and touch screens the tool menu closes when you tap elsewhere (drawing on the page, the desk, ...) */
+const optsFoldMQ = matchMedia("(max-width:900px), (max-height:500px), (pointer:coarse)");
+document.addEventListener("pointerdown", e => {
+  const t = e.target;
+  if (t.closest && t.closest("#tools button")){ document.body.classList.remove("opts-shut"); return; }
+  if (!optsFoldMQ.matches || el.opts.hidden || document.body.classList.contains("opts-shut")) return;
+  if (t.closest && t.closest(".subbar, .pop, .sheet, .modal, [role=dialog], #toast")) return;
+  document.body.classList.add("opts-shut");
+}, true);
 $("#mRec").onclick = () => { closePop(); if (Rec.active) stopRecording(); else { renderRecModeIcon(); openPop(el.recPop, $("#bMore")); } };
 $("#mFocus").onclick = () => { closePop(); setFocus(true); toast("Tam ekran. Çubukları geri getirmek için sağ üstteki düğmeye dokun."); };
 $("#focusExit").onclick = () => setFocus(false);
